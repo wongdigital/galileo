@@ -1,0 +1,24 @@
+# --- Sched-prose-bearing paths: never committed (legal posture, see README) ---
+# Raw fetched schedule data (titles, times + Sched-authored descriptions)
+data/events.json
+data/meta.json
+# App snapshot store, live-corpus test fixtures, enrichment batch intermediates
+data/snapshots/
+tests/fixtures/live/
+data/batch-*/
+*.batch-request.jsonl
+*.batch-results.jsonl
+
+# --- Secrets / local config ---
+.env
+.env.*
+*.local.json
+
+# --- Node / build ---
+node_modules/
+dist/
+out/
+*.log
+
+# --- OS noise ---
+.DS_Store

@@ -1,0 +1,10 @@
+{
+  "name": "sdcc-schedule",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Comic-Con San Diego schedule data pipeline and (eventually) a better schedule app",
+  "scripts": {
+    "fetch": "node scripts/fetch.mjs"
+  }
+}
