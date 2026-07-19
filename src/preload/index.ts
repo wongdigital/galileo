@@ -7,7 +7,8 @@ import { contextBridge, ipcRenderer } from 'electron'
  */
 const api = {
   schedule: {
-    refresh: () => ipcRenderer.invoke('schedule:refresh'),
+    // `acceptAnyway` is the drift warning's "use the new data anyway" override.
+    refresh: (options?: { acceptAnyway?: boolean }) => ipcRenderer.invoke('schedule:refresh', options),
   },
   changes: {
     acknowledge: (uids: string[]) => ipcRenderer.invoke('changes:acknowledge', uids),

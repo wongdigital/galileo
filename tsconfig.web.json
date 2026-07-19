@@ -12,8 +12,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "isolatedModules": true,
-    "baseUrl": ".",
-    "paths": { "@renderer/*": ["src/renderer/src/*"], "@shared/*": ["src/shared/*"] }
+    "paths": { "@renderer/*": ["./src/renderer/src/*"], "@shared/*": ["./src/shared/*"] }
   },
   "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/index.ts"]
 }

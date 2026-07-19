@@ -24,6 +24,7 @@ node_modules/
 dist/
 out/
 *.log
+*.tsbuildinfo
 
 # --- OS noise ---
 .DS_Store

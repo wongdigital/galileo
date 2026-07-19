@@ -12,7 +12,8 @@
     "typecheck": "tsc --build --force",
     "test": "vitest run",
     "test:watch": "vitest",
-    "fetch": "node scripts/fetch.mjs",
+    "fetch": "tsx scripts/fetch.mjs",
+    "fixtures": "node scripts/fixtures.mjs",
     "scan-franchises": "node scripts/scan-franchises.mjs",
     "enrich": "node --env-file=.env scripts/enrich.mjs"
   },
