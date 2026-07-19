@@ -10,6 +10,7 @@
 
 import { useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { EventCard } from '@renderer/components/EventCard'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
 import { EMPTY_FILTER } from '@shared/filter'
@@ -106,35 +107,49 @@ export function ScheduleView() {
             }}
           />
 
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-            <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-              {virtualizer.getVirtualItems().map((item) => {
-                const row = model.rows[item.index]
-                if (!row) return null
-                return (
-                  <div
-                    key={item.key}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${item.start}px)`,
-                    }}
-                  >
-                    <EventRow
-                      row={row}
-                      selected={spine.selectedUid === row.uid}
-                      onSelect={() =>
-                        spine.setSelectedUid(spine.selectedUid === row.uid ? null : row.uid)
-                      }
-                      onToggleStar={() => void spine.toggleStar(row.event)}
-                      onAcknowledge={() => void spine.acknowledge([row.uid])}
-                    />
-                  </div>
-                )
-              })}
+          {/* The card docks against this wrapper, not against the scroll element
+              itself: an absolute child of a scrolling box is positioned in the
+              scrolled content, so it would ride up and out of view on the first
+              wheel event. A sibling of the scroller stays put. */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+              <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+                {virtualizer.getVirtualItems().map((item) => {
+                  const row = model.rows[item.index]
+                  if (!row) return null
+                  return (
+                    <div
+                      key={item.key}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${item.start}px)`,
+                      }}
+                    >
+                      <EventRow
+                        row={row}
+                        selected={spine.selectedUid === row.uid}
+                        onSelect={() =>
+                          spine.setSelectedUid(spine.selectedUid === row.uid ? null : row.uid)
+                        }
+                        onToggleStar={() => void spine.toggleStar(row.event)}
+                        onAcknowledge={() => void spine.acknowledge([row.uid])}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
             </div>
+
+            {/* Selection is the pin (R11): the same `selectedUid` a row click
+                toggles is what the map pins, so a uid chosen in either view
+                opens the same card in the other. Dismissal clears the
+                selection, which is also what clicking the row again does. */}
+            {spine.selectedUid ? (
+              <EventCard uid={spine.selectedUid} onDismiss={() => spine.setSelectedUid(null)} />
+            ) : null}
           </div>
         </>
       )}

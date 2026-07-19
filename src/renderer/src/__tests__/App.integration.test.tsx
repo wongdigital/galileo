@@ -411,9 +411,14 @@ describe('change flags', () => {
     })
 
     // Star follows the UID, not the room; the selection readout still names it.
-    await waitFor(() => expect(screen.getByText('MOVED')).toBeTruthy())
-    expect(screen.getByRole('button', { name: /^Unstar Drawing Monsters/ })).toBeTruthy()
-    expect(screen.getByText('Room 26AB')).toBeTruthy()
+    //
+    // Two of each now: the row and the event card the selection opens over it
+    // both carry the badge, the star, and the new room. That duplication is the
+    // point rather than an accident — the card reads the same `buildRow` state
+    // the row does, so the two can never disagree (R10).
+    await waitFor(() => expect(screen.getAllByText('MOVED')).toHaveLength(2))
+    expect(screen.getAllByRole('button', { name: /^Unstar Drawing Monsters/ })).toHaveLength(2)
+    expect(screen.getAllByText('Room 26AB')).toHaveLength(2)
   })
 
   it('is loud about a starred event being cancelled', async () => {
