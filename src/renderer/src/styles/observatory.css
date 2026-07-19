@@ -1,0 +1,115 @@
+@import 'tailwindcss';
+
+/**
+ * The Observatory — dark instrument, luminous nodes, precision type.
+ *
+ * These tokens ARE the Tailwind theme (v4 `@theme` block), not a parallel set
+ * of variables that shadcn components ignore. Anything rendered through
+ * Tailwind utilities is dark-instrument from first paint, so no component ever
+ * ships looking like stock shadcn on a white card.
+ *
+ * Ground is near-black with a blue cast, never pure #000 — pure black kills the
+ * sense of depth the graph's glow depends on.
+ */
+@theme {
+  /* Ground: deepest surface to raised panel */
+  --color-ground-950: #05070b;
+  --color-ground-900: #07090e;
+  --color-ground-850: #0b0e15;
+  --color-ground-800: #10141d;
+  --color-ground-700: #171c28;
+  --color-ground-600: #202634;
+
+  /* Structure: hairlines and dividers. Instrument panels, not card borders. */
+  --color-line-strong: #2b3444;
+  --color-line: #1c2331;
+  --color-line-soft: #141a26;
+
+  /* Type: a precision scale, high contrast at the top, quiet at the bottom */
+  --color-ink-bright: #eef2f8;
+  --color-ink: #c3cbd9;
+  --color-ink-dim: #8a94a6;
+  --color-ink-faint: #5b6474;
+  /* Fringe: nodes with no edge under the active lens dim toward the rim (R8) */
+  --color-ink-fringe: #39414f;
+
+  /* Luminous accents. Cyan is the primary instrument light. */
+  --color-lumen: #4fd6e8;
+  --color-lumen-bright: #8bf0ff;
+  --color-lumen-dim: #2a8494;
+
+  /* Signal colors, each earning its place:
+     star = the user's own mark, warm against the cold ground
+     moved/updated = amber, attention without alarm
+     cancelled = desaturated red, reads as struck-through even in peripheral vision
+     new = green, additive */
+  --color-star: #f5c451;
+  --color-moved: #e8a33d;
+  --color-cancelled: #d1566a;
+  --color-new: #5ed6a0;
+
+  /* Type scale — tight, editorial, with a monospace for times and IDs */
+  --font-display: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+
+  /* Motion — a deliberate spec, not framework defaults (U9 elevates this) */
+  --ease-instrument: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --duration-lens: 620ms;
+  --duration-toggle: 220ms;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-ground-900);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* Tabular figures everywhere: a schedule where 11:30 and 11:00 jitter
+       against each other is a schedule that's harder to scan. */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden; /* the app owns its own scroll regions */
+  }
+
+  /* The drag region for the hidden-inset title bar. */
+  .titlebar-drag {
+    -webkit-app-region: drag;
+  }
+  .titlebar-drag button,
+  .titlebar-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  ::selection {
+    background: var(--color-lumen-dim);
+    color: var(--color-ink-bright);
+  }
+
+  /* Focus is visible and on-theme — accessibility we don't restyle away. */
+  :focus-visible {
+    outline: 2px solid var(--color-lumen);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ground-600);
+    border-radius: 5px;
+    border: 2px solid var(--color-ground-900);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-line-strong);
+  }
+}
