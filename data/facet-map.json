@@ -1,0 +1,891 @@
+{
+  "schema_version": 1,
+  "description": "Runtime tag->facet table. Applied at join time, never precompiled per UID, so con-week NEW events keep working facets without a maintainer recompile.",
+  "derived_from": "data/events.json — 3474 events, 182 distinct subtypes",
+  "dimensions": [
+    {
+      "id": "genre",
+      "label": "Genre & Topic",
+      "kind": "curated",
+      "multi": true
+    },
+    {
+      "id": "format",
+      "label": "Format",
+      "kind": "curated",
+      "multi": true
+    },
+    {
+      "id": "audience",
+      "label": "Audience Age",
+      "kind": "curated",
+      "multi": false,
+      "ordered_values": [
+        {
+          "id": "all-ages",
+          "label": "All ages",
+          "min_age": 0
+        },
+        {
+          "id": "kids",
+          "label": "Kids 7-12",
+          "min_age": 7
+        },
+        {
+          "id": "teens",
+          "label": "Teens 13-17",
+          "min_age": 13
+        },
+        {
+          "id": "adults",
+          "label": "Adults 18+",
+          "min_age": 18
+        }
+      ]
+    },
+    {
+      "id": "community",
+      "label": "Community",
+      "kind": "curated",
+      "multi": true
+    },
+    {
+      "id": "players",
+      "label": "Player Count",
+      "kind": "curated",
+      "multi": false,
+      "numeric": true
+    },
+    {
+      "id": "strand",
+      "label": "Program Strand",
+      "kind": "curated",
+      "multi": true
+    },
+    {
+      "id": "accessibility",
+      "label": "Accessibility",
+      "kind": "curated",
+      "multi": true
+    },
+    {
+      "id": "venue_hint",
+      "label": "Venue (tag claim)",
+      "kind": "validation",
+      "multi": true
+    },
+    {
+      "id": "timeband_hint",
+      "label": "Time band (tag claim)",
+      "kind": "validation",
+      "multi": true
+    },
+    {
+      "id": "duration_hint",
+      "label": "Duration (tag claim, minutes)",
+      "kind": "validation",
+      "multi": true
+    }
+  ],
+  "tags": {
+    "1 Hour": [
+      "duration_hint:60"
+    ],
+    "1- Players": [
+      "players:supported"
+    ],
+    "1-12 Players": [
+      "players:supported"
+    ],
+    "1-16 Players": [
+      "players:supported"
+    ],
+    "1-2 Players": [
+      "players:supported"
+    ],
+    "1-20 Players": [
+      "players:supported"
+    ],
+    "1-30 Participants": [
+      "players:supported"
+    ],
+    "1-32 Players": [
+      "players:supported"
+    ],
+    "1-4 Players": [
+      "players:supported"
+    ],
+    "1-5 Players": [
+      "players:supported"
+    ],
+    "1-6 Players": [
+      "players:supported"
+    ],
+    "1-60 Participants": [
+      "players:supported"
+    ],
+    "1-8 Players": [
+      "players:supported"
+    ],
+    "1-9 Players": [
+      "players:supported"
+    ],
+    "10 Minutes": [
+      "duration_hint:10"
+    ],
+    "10+": [
+      "audience:kids"
+    ],
+    "12+": [
+      "audience:kids"
+    ],
+    "13+": [
+      "audience:teens"
+    ],
+    "14+": [
+      "audience:teens"
+    ],
+    "15 Minutes": [
+      "duration_hint:15"
+    ],
+    "15+": [
+      "audience:teens"
+    ],
+    "16+": [
+      "audience:teens"
+    ],
+    "18+": [
+      "audience:adults"
+    ],
+    "2 Hours": [
+      "duration_hint:120"
+    ],
+    "2 Players": [
+      "players:supported"
+    ],
+    "2+ Players": [
+      "players:supported"
+    ],
+    "2-10 Players": [
+      "players:supported"
+    ],
+    "2-100 Players": [
+      "players:supported"
+    ],
+    "2-18 Players": [
+      "players:supported"
+    ],
+    "2-20 Participants": [
+      "players:supported"
+    ],
+    "2-20 Players": [
+      "players:supported"
+    ],
+    "2-4 Players": [
+      "players:supported"
+    ],
+    "2-48 Players": [
+      "players:supported"
+    ],
+    "2-5 Players": [
+      "players:supported"
+    ],
+    "2-5 players": [
+      "players:supported"
+    ],
+    "2-6 Players": [
+      "players:supported"
+    ],
+    "2-8 Players": [
+      "players:supported"
+    ],
+    "20 Minutes": [
+      "duration_hint:20"
+    ],
+    "20+": [
+      "audience:adults"
+    ],
+    "25 Minutes": [
+      "duration_hint:25"
+    ],
+    "3 Hours": [
+      "duration_hint:180"
+    ],
+    "3+": [
+      "audience:all-ages"
+    ],
+    "3-10 Players": [
+      "players:supported"
+    ],
+    "3-5 Players": [
+      "players:supported"
+    ],
+    "3-6 Players": [
+      "players:supported"
+    ],
+    "3-8 Players": [
+      "players:supported"
+    ],
+    "30 Minutes": [
+      "duration_hint:30"
+    ],
+    "30 minutes": [
+      "duration_hint:30"
+    ],
+    "4 Hours": [
+      "duration_hint:240"
+    ],
+    "4 Players": [
+      "players:supported"
+    ],
+    "4+": [
+      "audience:all-ages"
+    ],
+    "4-40 Players": [
+      "players:supported"
+    ],
+    "45 Hours": [
+      "duration_hint:2700"
+    ],
+    "45 Minutes": [
+      "duration_hint:45"
+    ],
+    "45Minutes": [
+      "duration_hint:45"
+    ],
+    "5+": [
+      "audience:all-ages"
+    ],
+    "50 Minutes": [
+      "duration_hint:50"
+    ],
+    "6+": [
+      "audience:all-ages"
+    ],
+    "6-8 Players": [
+      "players:supported"
+    ],
+    "60 Minutes": [
+      "duration_hint:60"
+    ],
+    "7+": [
+      "audience:kids"
+    ],
+    "8+": [
+      "audience:kids"
+    ],
+    "8-17": [
+      "audience:kids"
+    ],
+    "9+": [
+      "audience:kids"
+    ],
+    "90 Minutes": [
+      "duration_hint:90"
+    ],
+    "Action Adventure": [
+      "genre:action-adventure"
+    ],
+    "Action Figures - Toys - Collectibles": [
+      "genre:toys-collectibles"
+    ],
+    "Action/Adventure": [
+      "genre:action-adventure"
+    ],
+    "After Dark": [
+      "timeband_hint:after-dark"
+    ],
+    "Ages 7+": [
+      "audience:kids"
+    ],
+    "All Ages (Minors must be accompanied)": [
+      "audience:all-ages"
+    ],
+    "Animation": [
+      "genre:animation"
+    ],
+    "Anime & Manga": [
+      "genre:anime-manga"
+    ],
+    "Anniversaries": [
+      "genre:anniversaries-tributes"
+    ],
+    "Art and Illustration": [
+      "genre:art-illustration"
+    ],
+    "Awards Ceremonies": [
+      "format:awards"
+    ],
+    "BIPOC": [
+      "community:bipoc"
+    ],
+    "Board": [
+      "format:board-game"
+    ],
+    "Books": [
+      "genre:books"
+    ],
+    "CBLDF Events": [
+      "strand:cbldf"
+    ],
+    "CCG/TCG": [
+      "format:ccg-tcg"
+    ],
+    "CCI-IFF and Film School": [
+      "strand:cci-iff"
+    ],
+    "Card. 1-2 Players": [
+      "format:card-game",
+      "players:supported"
+    ],
+    "Cartooning and Comic Strips": [
+      "genre:comics"
+    ],
+    "Combat Exhibition 1 Hour": [
+      "format:exhibition"
+    ],
+    "Comic Creator Connection": [
+      "strand:creator-connection"
+    ],
+    "Comic-Con How To": [
+      "genre:education"
+    ],
+    "Comic-Con Museum": [
+      "venue_hint:museum"
+    ],
+    "Comic-Con Special Guest Spotlights & Appearances": [
+      "format:spotlight"
+    ],
+    "Comics": [
+      "genre:comics"
+    ],
+    "Comics Arts Conference": [
+      "strand:comics-arts-conference"
+    ],
+    "Comics-Oriented": [
+      "genre:comics"
+    ],
+    "Cosplay": [
+      "genre:cosplay"
+    ],
+    "Costuming": [
+      "genre:cosplay"
+    ],
+    "Daytime": [
+      "timeband_hint:daytime"
+    ],
+    "Digital": [
+      "format:video-game-play"
+    ],
+    "Documentary": [
+      "format:screening"
+    ],
+    "Education": [
+      "genre:education"
+    ],
+    "Evening": [
+      "timeband_hint:evening"
+    ],
+    "Exclusive Portal": [
+      "strand:exclusive-portal"
+    ],
+    "Fandom": [
+      "genre:fandom"
+    ],
+    "Games": [
+      "genre:games"
+    ],
+    "Gaming Creator Connection": [
+      "strand:creator-connection"
+    ],
+    "Group Signing": [
+      "format:signing"
+    ],
+    "Hilton Programs": [
+      "venue_hint:hilton"
+    ],
+    "Historical": [
+      "genre:historical"
+    ],
+    "Horror and Suspense": [
+      "genre:horror"
+    ],
+    "Horror/Suspense": [
+      "genre:horror"
+    ],
+    "Humor & Satire": [
+      "genre:humor"
+    ],
+    "Hyatt Programs": [
+      "venue_hint:hyatt"
+    ],
+    "Individual Signing": [
+      "format:signing"
+    ],
+    "International": [
+      "community:international"
+    ],
+    "Kids": [
+      "audience:all-ages"
+    ],
+    "LGBTQIA+": [
+      "community:lgbtqia"
+    ],
+    "Late Night": [
+      "timeband_hint:late-night"
+    ],
+    "Library Programs": [
+      "venue_hint:library"
+    ],
+    "Limited Signing": [
+      "format:signing"
+    ],
+    "Marriott Programs": [
+      "venue_hint:marriott"
+    ],
+    "Merchandise": [
+      "genre:toys-collectibles"
+    ],
+    "Miniature": [
+      "format:miniatures"
+    ],
+    "Miniatures": [
+      "format:miniatures"
+    ],
+    "Model Kit": [
+      "format:model-kit"
+    ],
+    "Movies": [
+      "genre:movies"
+    ],
+    "Music": [
+      "genre:music"
+    ],
+    "Mysteries & Crime Dramas": [
+      "genre:mystery-crime"
+    ],
+    "No Captions Available": [
+      "accessibility:no-captions"
+    ],
+    "Omni Programs": [
+      "venue_hint:omni"
+    ],
+    "Open Caption: English": [
+      "accessibility:open-captions"
+    ],
+    "Open Captions if Available": [
+      "accessibility:open-captions-maybe"
+    ],
+    "Podcasts": [
+      "genre:podcasts"
+    ],
+    "RPG": [
+      "format:rpg"
+    ],
+    "Science Fiction & Fantasy": [
+      "genre:scifi-fantasy"
+    ],
+    "Science Fiction/Fantasy": [
+      "genre:scifi-fantasy"
+    ],
+    "Seminars & Workshops": [
+      "format:workshop"
+    ],
+    "Superheroes": [
+      "genre:superheroes"
+    ],
+    "TTRPG": [
+      "format:rpg"
+    ],
+    "Technology - Science - STEM": [
+      "genre:science-tech"
+    ],
+    "Television": [
+      "genre:television"
+    ],
+    "The Jim Higgins College of Comics": [
+      "strand:college-of-comics"
+    ],
+    "Tributes": [
+      "genre:anniversaries-tributes"
+    ],
+    "Up to 60 Players": [
+      "players:supported"
+    ],
+    "Video Games": [
+      "genre:video-games"
+    ],
+    "Web": [
+      "genre:web-digital"
+    ],
+    "Writers & Writing": [
+      "genre:writing"
+    ]
+  },
+  "ranges": {
+    "1- Players": {
+      "players": {
+        "min": 1,
+        "max": null
+      }
+    },
+    "1-12 Players": {
+      "players": {
+        "min": 1,
+        "max": 12
+      }
+    },
+    "1-16 Players": {
+      "players": {
+        "min": 1,
+        "max": 16
+      }
+    },
+    "1-2 Players": {
+      "players": {
+        "min": 1,
+        "max": 2
+      }
+    },
+    "1-20 Players": {
+      "players": {
+        "min": 1,
+        "max": 20
+      }
+    },
+    "1-30 Participants": {
+      "players": {
+        "min": 1,
+        "max": 30
+      }
+    },
+    "1-32 Players": {
+      "players": {
+        "min": 1,
+        "max": 32
+      }
+    },
+    "1-4 Players": {
+      "players": {
+        "min": 1,
+        "max": 4
+      }
+    },
+    "1-5 Players": {
+      "players": {
+        "min": 1,
+        "max": 5
+      }
+    },
+    "1-6 Players": {
+      "players": {
+        "min": 1,
+        "max": 6
+      }
+    },
+    "1-60 Participants": {
+      "players": {
+        "min": 1,
+        "max": 60
+      }
+    },
+    "1-8 Players": {
+      "players": {
+        "min": 1,
+        "max": 8
+      }
+    },
+    "1-9 Players": {
+      "players": {
+        "min": 1,
+        "max": 9
+      }
+    },
+    "10+": {
+      "age": {
+        "min": 10,
+        "max": null
+      }
+    },
+    "12+": {
+      "age": {
+        "min": 12,
+        "max": null
+      }
+    },
+    "13+": {
+      "age": {
+        "min": 13,
+        "max": null
+      }
+    },
+    "14+": {
+      "age": {
+        "min": 14,
+        "max": null
+      }
+    },
+    "15+": {
+      "age": {
+        "min": 15,
+        "max": null
+      }
+    },
+    "16+": {
+      "age": {
+        "min": 16,
+        "max": null
+      }
+    },
+    "18+": {
+      "age": {
+        "min": 18,
+        "max": null
+      }
+    },
+    "2 Players": {
+      "players": {
+        "min": 2,
+        "max": 2
+      }
+    },
+    "2+ Players": {
+      "players": {
+        "min": 2,
+        "max": null
+      }
+    },
+    "2-10 Players": {
+      "players": {
+        "min": 2,
+        "max": 10
+      }
+    },
+    "2-100 Players": {
+      "players": {
+        "min": 2,
+        "max": 100
+      }
+    },
+    "2-18 Players": {
+      "players": {
+        "min": 2,
+        "max": 18
+      }
+    },
+    "2-20 Participants": {
+      "players": {
+        "min": 2,
+        "max": 20
+      }
+    },
+    "2-20 Players": {
+      "players": {
+        "min": 2,
+        "max": 20
+      }
+    },
+    "2-4 Players": {
+      "players": {
+        "min": 2,
+        "max": 4
+      }
+    },
+    "2-48 Players": {
+      "players": {
+        "min": 2,
+        "max": 48
+      }
+    },
+    "2-5 Players": {
+      "players": {
+        "min": 2,
+        "max": 5
+      }
+    },
+    "2-5 players": {
+      "players": {
+        "min": 2,
+        "max": 5
+      }
+    },
+    "2-6 Players": {
+      "players": {
+        "min": 2,
+        "max": 6
+      }
+    },
+    "2-8 Players": {
+      "players": {
+        "min": 2,
+        "max": 8
+      }
+    },
+    "20+": {
+      "age": {
+        "min": 20,
+        "max": null
+      }
+    },
+    "3+": {
+      "age": {
+        "min": 3,
+        "max": null
+      }
+    },
+    "3-10 Players": {
+      "players": {
+        "min": 3,
+        "max": 10
+      }
+    },
+    "3-5 Players": {
+      "players": {
+        "min": 3,
+        "max": 5
+      }
+    },
+    "3-6 Players": {
+      "players": {
+        "min": 3,
+        "max": 6
+      }
+    },
+    "3-8 Players": {
+      "players": {
+        "min": 3,
+        "max": 8
+      }
+    },
+    "4 Players": {
+      "players": {
+        "min": 4,
+        "max": 4
+      }
+    },
+    "4+": {
+      "age": {
+        "min": 4,
+        "max": null
+      }
+    },
+    "4-40 Players": {
+      "players": {
+        "min": 4,
+        "max": 40
+      }
+    },
+    "5+": {
+      "age": {
+        "min": 5,
+        "max": null
+      }
+    },
+    "6+": {
+      "age": {
+        "min": 6,
+        "max": null
+      }
+    },
+    "6-8 Players": {
+      "players": {
+        "min": 6,
+        "max": 8
+      }
+    },
+    "7+": {
+      "age": {
+        "min": 7,
+        "max": null
+      }
+    },
+    "8+": {
+      "age": {
+        "min": 8,
+        "max": null
+      }
+    },
+    "8-17": {
+      "age": {
+        "min": 8,
+        "max": 17
+      }
+    },
+    "9+": {
+      "age": {
+        "min": 9,
+        "max": null
+      }
+    },
+    "Ages 7+": {
+      "age": {
+        "min": 7,
+        "max": null
+      }
+    },
+    "All Ages (Minors must be accompanied)": {
+      "age": {
+        "min": 0,
+        "max": null
+      }
+    },
+    "Card. 1-2 Players": {
+      "players": {
+        "min": 1,
+        "max": 2
+      }
+    },
+    "Kids": {
+      "age": {
+        "min": 0,
+        "max": 12
+      }
+    },
+    "Up to 60 Players": {
+      "players": {
+        "min": 1,
+        "max": 60
+      }
+    }
+  },
+  "unmapped_at_authoring": [
+    "Kate Weddle",
+    "Nant Studios",
+    "The Upper Deck Company",
+    "Marvel Snap",
+    "Harry Otto and Suzanne Feller-Otto",
+    "Roland Tan",
+    "Committed Comics",
+    "Barbara Randall Kesel",
+    "Anthony Winn",
+    "Harry Otto",
+    "ZRock Comics/Bad Bunker",
+    "Ricardo Delgado",
+    "Jose Iturriaga",
+    "VIZ Media One-Shots",
+    "VIZ Media Originals",
+    "Alessandro Taini",
+    "Glenn Harmon",
+    "Brendan O'Connor",
+    "Max Narciso",
+    "Erik Lechtenberg",
+    "Tim Burgard",
+    "Jiarui Bai",
+    "David Lowery",
+    "Phil Howell",
+    "PixelPlex",
+    "LLC",
+    "Ravensburger North America (RNA)",
+    "Fanatics Collectibles (Topps Trading Cards)",
+    "James Doh",
+    "Hyoung Nam",
+    "Sienne Josselin",
+    "Vincent Lucido",
+    "Ramsey Avery",
+    "Tim Longo",
+    "Kathleen Widomski",
+    "Jasmine Alexia Jackson",
+    "Bill Brownell",
+    "Geoffrey Mandel"
+  ]
+}
