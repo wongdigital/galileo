@@ -80,16 +80,3 @@ describe('facet entities', () => {
   })
 })
 
-describe('offering entities', () => {
-  it('produces nothing for a one-sitting offering', () => {
-    expect(entitiesFor(record('x', { offeringKey: 'k', offeringSessions: 1 }), 'offering')).toEqual([])
-  })
-
-  it('produces the cluster entity for a repeated offering', () => {
-    const [entity] = entitiesFor(
-      record('x', { offeringKey: 'GAMES||boss monster', offeringTitle: 'Boss Monster', offeringSessions: 3 }),
-      'offering'
-    )
-    expect(entity).toMatchObject({ id: 'offering:GAMES||boss monster', label: 'Boss Monster' })
-  })
-})

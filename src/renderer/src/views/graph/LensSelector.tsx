@@ -14,7 +14,6 @@ const LABELS: Record<LensId, { label: string; hint: string }> = {
   ip: { label: 'IP', hint: 'shares a franchise' },
   people: { label: 'People', hint: 'shares a named person' },
   facets: { label: 'Genre', hint: 'shares a genre' },
-  offering: { label: 'Offering', hint: 'another sitting of the same thing' },
 }
 
 export const LENS_LABEL = (lens: LensId): string => LABELS[lens].label

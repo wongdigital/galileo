@@ -20,13 +20,27 @@
  *   vanished renders from the star record's snapshot, which is the only record
  *   the plan ever existed. An unstarred one dismisses. Neither throws, and
  *   neither leaves a blank shell on screen.
+ * - **"Also runs" is where the offering lens went.** The map once had a lens
+ *   whose hubs meant "this event, again" — real structure (2,268 events sit in
+ *   a repeat cluster), wrong surface: it deduped copies where every other lens
+ *   relates different events. The question the cluster answers ("I can't make
+ *   this sitting, is there another?") is asked while looking at one event, so
+ *   it is answered here, on the event.
+ * - **The metadata is the raw feed's, on purpose.** Subtypes and track come
+ *   straight from Sched; people and franchises from the compiled extraction,
+ *   trusted entries only. On the map this is what makes an isolated dot
+ *   explicable: an event whose seven panelists each appear nowhere else *is*
+ *   unconnected under People, and the card is where that stops looking like a
+ *   bug and starts being information.
  */
 
 import { useEffect, useMemo, type ReactNode } from 'react'
-import { buildRow, formatTime, type RowState } from '@renderer/state/derive'
+import { buildRow, dayLabel, formatTime, localParts, type RowState } from '@renderer/state/derive'
+import { useEnrichmentSource } from '@renderer/state/enrichmentIndex'
 import { useSpine } from '@renderer/state/spine'
 import { StarButton } from '@renderer/views/schedule/StarButton'
-import type { EventClassification } from '@shared/enrichment'
+import { buildOfferings, type EventClassification, type OfferingIndex } from '@shared/enrichment'
+import { humanizeId } from '@shared/graph'
 import type { ScheduleEvent } from '@shared/schedule'
 
 /** `buildRow` reads classifications only for the duration label, which the card
@@ -60,6 +74,60 @@ export function useEventLookup(): ReadonlyMap<string, ScheduleEvent> {
   const { dataset } = useSpine()
   const events = dataset?.events
   return useMemo(() => new Map((events ?? []).map((event) => [event.uid, event])), [events])
+}
+
+/** Module-level, not per-instance: every open card mounts this hook, and the
+ *  cluster pass normalizes every title in the corpus. Same WeakMap-on-the-
+ *  events-array pattern as `useSchedule`'s Layer 1. */
+const offeringCache = new WeakMap<readonly ScheduleEvent[], OfferingIndex>()
+const NO_EVENTS: readonly ScheduleEvent[] = []
+
+function useOfferingIndex(): OfferingIndex {
+  const { dataset } = useSpine()
+  const events = dataset?.events ?? NO_EVENTS
+  return useMemo(() => {
+    const cached = offeringCache.get(events)
+    if (cached) return cached
+    const built = buildOfferings(events)
+    offeringCache.set(events, built)
+    return built
+  }, [events])
+}
+
+/** "Thu 10:00a" — a sitting has to name its day, since repeats usually land on
+ *  different ones. */
+function whenLabel(iso: string | null): string {
+  const parts = localParts(iso)
+  const time = formatTime(iso)
+  return parts ? `${dayLabel(parts.date).weekday} ${time}` : time
+}
+
+/** The feed's track strings carry a sort prefix ("1: PROGRAMS") that means
+ *  nothing to a reader. */
+function trackLabel(track: string | null): string | null {
+  const label = (track ?? '').replace(/^\d+:\s*/, '').trim()
+  return label || null
+}
+
+/** Seeded franchises get the curated name; unseeded ones are shown as
+ *  extracted, deduped on the shown label. */
+function franchiseLabels(
+  franchises: readonly { surface_text: string; canonical: string }[],
+): string[] {
+  const out: string[] = []
+  for (const franchise of franchises) {
+    const canonical = franchise.canonical.trim()
+    const label =
+      canonical && canonical !== 'other' ? humanizeId(canonical) : franchise.surface_text.trim()
+    if (label && !out.includes(label)) out.push(label)
+  }
+  return out
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <span className="font-mono text-[10px] tracking-[0.12em] text-ink-faint">{children}</span>
+  )
 }
 
 interface CardShellProps {
@@ -110,8 +178,10 @@ interface EventCardProps {
 }
 
 export function EventCard({ uid, onDismiss }: EventCardProps) {
-  const { dataset, status, stars, toggleStar, removeStar } = useSpine()
+  const { dataset, status, stars, toggleStar, removeStar, setSelectedUid } = useSpine()
   const byUid = useEventLookup()
+  const offerings = useOfferingIndex()
+  const enrichment = useEnrichmentSource(dataset?.events)
 
   const event = byUid.get(uid)
   const star = stars.find((s) => s.uid === uid) ?? null
@@ -169,6 +239,25 @@ export function EventCard({ uid, onDismiss }: EventCardProps) {
   const cancelled = row.states.includes('cancelled')
   const description = event.description.trim()
 
+  // The other sittings of this same program, in schedule order. Clicking one
+  // re-selects it through the spine; the host swaps the card, and on the map
+  // the pin moves with it. A sitting the host's scope cannot draw closes the
+  // card instead (the map's no-card-without-a-dot rule) — accepted, since the
+  // common case is browsing an unfiltered or interest-filtered corpus where
+  // every sitting is in scope.
+  const offeringKey = offerings.keyByUid.get(uid)
+  const offering = offeringKey ? offerings.byKey.get(offeringKey) : undefined
+  const siblings = (offering?.uids ?? [])
+    .filter((other) => other !== uid)
+    .map((other) => byUid.get(other))
+    .filter((sibling): sibling is ScheduleEvent => sibling !== undefined)
+
+  const entry = enrichment.entryFor(uid)
+  const people = entry?.people ?? []
+  const franchises = franchiseLabels(entry?.franchises ?? [])
+  const track = trackLabel(event.track)
+  const subtypes = event.subtypes.filter((subtype) => subtype.trim().length > 0)
+
   return (
     <CardShell eyebrow="EVENT" dismissLabel="Close event card" onDismiss={onDismiss}>
       <div className="mt-1.5 flex shrink-0 items-start gap-2">
@@ -191,6 +280,81 @@ export function EventCard({ uid, onDismiss }: EventCardProps) {
           <StateBadge key={state} state={state} />
         ))}
       </div>
+
+      {siblings.length > 0 ? (
+        <div className="mt-2.5 shrink-0 border-t border-line-soft pt-2" data-testid="also-runs">
+          <SectionLabel>ALSO RUNS</SectionLabel>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {siblings.map((sibling) => (
+              <button
+                key={sibling.uid}
+                type="button"
+                onClick={() => setSelectedUid(sibling.uid)}
+                title={`${sibling.title} — ${sibling.room || 'Room TBA'}`}
+                className="rounded border border-line px-1.5 py-0.5 font-mono text-[10.5px] text-ink-dim transition-colors hover:border-line-strong hover:text-ink"
+              >
+                {whenLabel(sibling.start)}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {track || subtypes.length > 0 ? (
+        <div
+          className="mt-2.5 flex shrink-0 flex-wrap items-center gap-1.5"
+          data-testid="event-source-tags"
+        >
+          {track ? (
+            <span className="rounded border border-line px-1.5 py-px font-mono text-[9.5px] tracking-[0.08em] text-ink-dim">
+              {track}
+            </span>
+          ) : null}
+          {subtypes.map((subtype) => (
+            <span
+              key={subtype}
+              className="rounded border border-line-soft px-1.5 py-px font-mono text-[9.5px] text-ink-faint"
+            >
+              {subtype}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {people.length > 0 ? (
+        <div className="mt-2.5 shrink-0 border-t border-line-soft pt-2" data-testid="event-people">
+          <SectionLabel>PEOPLE</SectionLabel>
+          <ul className="mt-1 space-y-0.5">
+            {people.map((person) => (
+              <li
+                key={person.name}
+                className="flex items-baseline justify-between gap-2 text-[11.5px] leading-snug"
+              >
+                <span className="min-w-0 truncate text-ink">{person.name}</span>
+                {person.role ? (
+                  <span className="shrink-0 text-[10px] text-ink-faint">{person.role}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {franchises.length > 0 ? (
+        <div className="mt-2.5 shrink-0 border-t border-line-soft pt-2" data-testid="event-franchises">
+          <SectionLabel>IP</SectionLabel>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {franchises.map((label) => (
+              <span
+                key={label}
+                className="rounded border border-line-soft px-1.5 py-px text-[10.5px] text-ink-dim"
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {description ? (
         <div

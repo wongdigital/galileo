@@ -42,7 +42,7 @@ export function loadEnrichmentIndex(): Promise<EnrichmentIndex | null> {
     })
     .catch((error: unknown) => {
       // A missing or corrupt index is a degraded graph, not a broken app: the
-      // facets and offering lenses are deterministic and keep working.
+      // genre lens is deterministic and keeps working.
       console.warn('[enrichment] index failed to load:', error)
       return null
     })
@@ -96,6 +96,34 @@ export interface EnrichmentSource {
 const EMPTY: EnrichmentSource = { ready: false, entryFor: () => null, stats: { entries: 0, stale: 0 } }
 
 /**
+ * One staleness pass per dataset, no matter how many hooks mount. The pass
+ * hashes every event description (3,474 sha256 calls through Web Crypto), and
+ * the graph view and every event card each mount this hook — per-instance
+ * effects would re-run the whole pass on every card pin. Keyed on the events
+ * array identity, same signal `useSchedule`'s Layer-1 cache uses.
+ */
+const sourceCache = new WeakMap<readonly ScheduleEvent[], Promise<EnrichmentSource>>()
+
+async function computeSource(events: readonly ScheduleEvent[]): Promise<EnrichmentSource> {
+  const index = await loadEnrichmentIndex()
+  if (!index) {
+    // No index: the graph still runs on the genre lens; cards show no
+    // extracted people or franchises.
+    return { ready: true, entryFor: () => null, stats: { entries: 0, stale: 0 } }
+  }
+  const stale = await staleUids(events, index)
+  return {
+    ready: true,
+    entryFor: (uid) => {
+      if (stale.has(uid)) return null
+      const entry = index.entries[uid]
+      return entry && entry.status === 'ok' ? entry : null
+    },
+    stats: { entries: Object.keys(index.entries).length, stale: stale.size },
+  }
+}
+
+/**
  * Loads the index once and re-runs the staleness pass whenever the dataset
  * swaps. Returns a not-ready source until both finish, which the graph renders
  * as a loading state rather than as an empty corpus.
@@ -107,24 +135,13 @@ export function useEnrichmentSource(events: readonly ScheduleEvent[] | undefined
     if (!events) return
     let cancelled = false
 
-    void loadEnrichmentIndex().then(async (index) => {
-      if (cancelled) return
-      if (!index) {
-        // No index: the graph still runs on facets and offerings.
-        setSource({ ready: true, entryFor: () => null, stats: { entries: 0, stale: 0 } })
-        return
-      }
-      const stale = await staleUids(events, index)
-      if (cancelled) return
-      setSource({
-        ready: true,
-        entryFor: (uid) => {
-          if (stale.has(uid)) return null
-          const entry = index.entries[uid]
-          return entry && entry.status === 'ok' ? entry : null
-        },
-        stats: { entries: Object.keys(index.entries).length, stale: stale.size },
-      })
+    let pending = sourceCache.get(events)
+    if (!pending) {
+      pending = computeSource(events)
+      sourceCache.set(events, pending)
+    }
+    void pending.then((computed) => {
+      if (!cancelled) setSource(computed)
     })
 
     return () => {

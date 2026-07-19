@@ -85,7 +85,7 @@ vi.mock('react-force-graph-2d', async () => {
  *
  *   IP      — Star Wars covers p1 + p3; p2 is fringe.
  *   People  — Ada Vance covers p1 + p2; p3 is fringe.
- *   Offering— every title is distinct, so no hub at all.
+ *   Genre   — no fixture event carries a subtype, so no hub at all.
  */
 vi.mock('@data/enrichment.json', () => ({
   default: {
@@ -330,10 +330,10 @@ describe('GraphView — the all-fringe scope', () => {
     await mountSized()
     await screen.findByTestId('node:ip:star-wars')
 
-    // Every fixture title is distinct, so no offering has a second sitting.
-    act(() => spine.setLens('offering'))
+    // No fixture event carries a subtype, so the genre lens draws nothing.
+    act(() => spine.setLens('facets'))
 
-    expect(await screen.findByText(/No Offering hubs here/)).toBeTruthy()
+    expect(await screen.findByText(/No Genre hubs here/)).toBeTruthy()
     // Both other lenses have exactly one hub over this scope.
     expect(screen.getByText(/IP has 1/)).toBeTruthy()
     // Still a map, not an empty state — every event is drawn as fringe.

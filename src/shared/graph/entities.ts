@@ -111,22 +111,6 @@ function facetEntities(record: GraphRecord): GraphEntity[] {
   return out
 }
 
-/**
- * A one-sitting offering is not a connection to anything, so it produces no
- * entity at all — `sessionCount` of 1 would otherwise fill the index with 1,206
- * singleton buckets that can never yield an edge.
- */
-function offeringEntities(record: GraphRecord): GraphEntity[] {
-  if (!record.offeringKey || (record.offeringSessions ?? 0) < 2) return []
-  return [
-    {
-      id: `offering:${record.offeringKey}`,
-      label: record.offeringTitle ?? record.offeringKey,
-      lens: 'offering',
-    },
-  ]
-}
-
 export function entitiesFor(record: GraphRecord, lens: LensId): GraphEntity[] {
   switch (lens) {
     case 'people':
@@ -135,7 +119,5 @@ export function entitiesFor(record: GraphRecord, lens: LensId): GraphEntity[] {
       return ipEntities(record)
     case 'facets':
       return facetEntities(record)
-    case 'offering':
-      return offeringEntities(record)
   }
 }

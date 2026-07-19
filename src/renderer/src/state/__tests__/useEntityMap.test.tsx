@@ -244,8 +244,9 @@ describe('useEntityMap — lens switching (R3, AE4)', () => {
     setText(result.current.spine, 'Comics')
     await waitFor(() => expect(result.current.map.hubs).toHaveLength(1))
 
-    // Distinct titles mean distinct offering clusters, so no offering qualifies.
-    act(() => result.current.spine.setLens('offering'))
+    // No fixture event carries a subtype, so the genre lens has nothing to
+    // join on.
+    act(() => result.current.spine.setLens('facets'))
 
     expect(result.current.map.hubs).toEqual([])
     expect(result.current.map.links).toEqual([])

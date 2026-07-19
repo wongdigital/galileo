@@ -5,9 +5,9 @@
  * Layers, ordered by what invalidates them:
  *
  * 1. **Records** — dataset + compiled index. The expensive pass.
- * 2. **Lens indexes** — all four, built once per dataset. Building every lens
- *    up front is what makes switching instant, and it is also what lets the
- *    all-fringe state quote hub counts for the lenses it is *not* showing.
+ * 2. **Lens indexes** — all of them, built once per dataset. Building every
+ *    lens up front is what makes switching instant, and it is also what lets
+ *    the all-fringe state quote hub counts for the lenses it is *not* showing.
  * 3. **Bipartite graph** — `buildBipartite` under the active lens over the
  *    active filter. There is no seed and no graph-local scope: the filter is
  *    the scope and nothing else (R2).
@@ -26,7 +26,6 @@
 
 import { useMemo, useRef } from 'react'
 
-import { buildOfferings } from '@shared/enrichment'
 import {
   LENSES,
   buildBipartite,
@@ -80,7 +79,7 @@ export interface EntityMapModel {
   /** True once the compiled index has loaded; people/IP are empty before it. */
   indexReady: boolean
   lens: LensId
-  /** All four, so the all-fringe state can count hubs under the lenses it is
+  /** All lenses, so the all-fringe state can count hubs under the lenses it is
    *  not showing without rebuilding anything. */
   indexes: ReadonlyMap<LensId, LensIndex>
   hubs: EntityMapHub[]
@@ -137,28 +136,22 @@ export function useEntityMap(): EntityMapModel {
   const events = dataset?.events
   const changes = dataset?.changes
 
-  // Layer 1 — records. Facets and offerings are deterministic and always
-  // present; people and franchises arrive only for entries the hash vouches for.
+  // Layer 1 — records. Facets are deterministic and always present; people and
+  // franchises arrive only for entries the hash vouches for.
   const records = useMemo<GraphRecord[]>(() => {
     const list = events ?? []
-    const offerings = buildOfferings(list)
     return list.map((event) => {
       const entry = enrichment.entryFor(event.uid)
-      const key = offerings.keyByUid.get(event.uid) ?? ''
-      const offering = offerings.byKey.get(key)
       return {
         uid: event.uid,
         people: entry?.people ?? [],
         franchises: entry?.franchises ?? [],
         facets: schedule.facetsByUid.get(event.uid)?.facets ?? {},
-        offeringKey: key,
-        offeringTitle: offering?.title,
-        offeringSessions: offering?.sessionCount ?? 1,
       }
     })
   }, [events, enrichment, schedule.facetsByUid])
 
-  // Layer 2 — all four lenses at once.
+  // Layer 2 — every lens at once.
   const indexes = useMemo(() => buildLensIndexes(records, LENSES), [records])
 
   const starredUids = useMemo(() => new Set(stars.map((s) => s.uid)), [stars])

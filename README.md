@@ -84,7 +84,7 @@ Aliases are applied **last** in the merge, so a rerun never clobbers a correctio
 
 ## The entity map
 
-The second view is a bipartite map: **entities** — a person, a franchise, a genre, an offering cluster — are hubs sized by how many events they cover, **events** are dots, and one link joins each event to each entity it carries. A lens picks which kind of entity is drawn; the active filter is the map's only scope, so what the sidebar holds is what the map draws.
+The second view is a bipartite map: **entities** — a person, a franchise, a genre — are hubs sized by how many events they cover, **events** are dots, and one link joins each event to each entity it carries. A lens picks which kind of entity is drawn; the active filter is the map's only scope, so what the sidebar holds is what the map draws. (An offering lens — hubs meaning "this same thing runs N times" — shipped and was retired: it deduped copies where every other lens relates different events. Its answer lives on the event card as "Also runs," listing the other sittings of a repeated program.)
 
 It replaced an ego-network model that drew events only and connected two events sharing an entity. That shape does not survive the real corpus: a shared entity becomes a clique, so the Comics slice under the IP lens produced 659 links, a single 256-node component, and 215 isolated events. Linking through entities instead makes links scale linearly with the corpus rather than quadratically, and it makes "which programs is this person in" a dot you can point at. See `docs/plans/2026-07-19-001-feat-entity-map-graph-plan.md`.
 

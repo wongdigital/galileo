@@ -20,6 +20,23 @@ import App from '../App'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import type { StarRecord } from '@shared/stars'
 
+/** The event card loads the enrichment index for its metadata sections; an
+ *  empty index keeps the 1.2 MB live file out of the suite. */
+vi.mock('@data/enrichment.json', () => ({
+  default: {
+    schema_version: 1,
+    generated_at: '2026-07-18T00:00:00Z',
+    provenance: {
+      model: 'test',
+      batch_id: 'test',
+      franchise_seed_version: 1,
+      system_prompt_sha: 'test',
+      event_count: 0,
+    },
+    entries: {},
+  },
+}))
+
 const SAT = '2026-07-25'
 const SUN = '2026-07-26'
 

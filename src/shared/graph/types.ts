@@ -2,10 +2,17 @@
  * The entity map's pure layer.
  *
  * A lens is a rule for what an event is *about*. Each one reduces an event to a
- * set of **entities** — a person, a franchise, a genre, an offering cluster.
- * Nothing here knows about d3, canvas, or React; the whole model is a
- * set-membership problem over strings, which is why it can be tested without a
- * DOM.
+ * set of **entities** — a person, a franchise, a genre. Nothing here knows
+ * about d3, canvas, or React; the whole model is a set-membership problem over
+ * strings, which is why it can be tested without a DOM.
+ *
+ * There is no offering lens, and there was one. Repeat clusters ("this same
+ * thing runs N times") are real structure — 2,268 events sit in one — but a
+ * hub meaning "this event, again" relates nothing to anything else; it dedups
+ * copies where every other lens joins *different* events. The scheduling
+ * question the cluster answers ("is there another sitting?") is asked while
+ * looking at one event, so the event card answers it, and the lens roster
+ * holds only rules that connect.
  *
  * The map never materializes pairs of events. The corpus makes that impossible
  * to ignore: `genre:comics` alone covers 486 events, which is 117,855 pairs for
@@ -15,9 +22,9 @@
  * the corpus rather than quadratically.
  */
 
-export type LensId = 'people' | 'ip' | 'facets' | 'offering'
+export type LensId = 'people' | 'ip' | 'facets'
 
-export const LENSES: readonly LensId[] = ['ip', 'people', 'facets', 'offering']
+export const LENSES: readonly LensId[] = ['ip', 'people', 'facets']
 
 /**
  * A shared thing two events have in common. `id` is namespaced by lens so
@@ -47,11 +54,6 @@ export interface GraphRecord {
   franchises?: readonly { surface_text: string; canonical: string }[]
   /** Curated facet dimensions, as `applyFacets` produces them. */
   facets?: Readonly<Record<string, readonly string[]>>
-  /** Offering cluster key from `buildOfferings`. */
-  offeringKey?: string
-  /** Display title for the cluster, and how many sittings it has. */
-  offeringTitle?: string
-  offeringSessions?: number
 }
 
 export interface LensIndex {
