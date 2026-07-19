@@ -45,7 +45,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
 import { forceRadial } from 'd3-force'
 import { useSpine } from '@renderer/state/spine'
-import { useSchedule } from '@renderer/state/useSchedule'
 import { useEntityMap } from '@renderer/state/useEntityMap'
 import { EventCard } from '@renderer/components/EventCard'
 import { EntityCard } from '@renderer/components/EntityCard'
@@ -130,19 +129,23 @@ function entityLabel(entity: GraphEntity): string {
 function hubCountFor(index: LensIndex, scope: ReadonlySet<string>): number {
   let count = 0
   for (const uids of index.uidsByEntity.values()) {
-    let inScope = 0
+    // Deduped, because `buildBipartite` dedupes the same bucket before applying
+    // the same threshold. Counting raw entries would let an entity whose bucket
+    // lists one uid twice (overlapping source records) clear the bar here and be
+    // pruned there — so the overlay would offer a way out that lands the user on
+    // the identical all-fringe map, now pointing back where they came from.
+    const inScope = new Set<string>()
     for (const uid of uids) {
-      if (scope.has(uid)) inScope += 1
-      if (inScope >= MIN_ENTITY_DEGREE) break
+      if (scope.has(uid)) inScope.add(uid)
+      if (inScope.size >= MIN_ENTITY_DEGREE) break
     }
-    if (inScope >= MIN_ENTITY_DEGREE) count += 1
+    if (inScope.size >= MIN_ENTITY_DEGREE) count += 1
   }
   return count
 }
 
 export function GraphView() {
   const { lens, setLens, selectedUid, setSelectedUid } = useSpine()
-  const schedule = useSchedule()
   const map = useEntityMap()
 
   const engine = useRef<ForceGraphMethods<GraphNodeObject, GraphLinkObject> | undefined>(undefined)
@@ -153,8 +156,13 @@ export function GraphView() {
   const [pinnedEntity, setPinnedEntity] = useState<string | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
 
-  const { nodes, links, nodesChanged } = useNodeCache(map.nodes, map.links)
+  const cached = useNodeCache(map.nodes, map.links)
+  const { nodes, links } = cached
   const graphData = useMemo(() => ({ nodes, links }), [nodes, links])
+
+  /** Every drawn node id. The dimming rule reads it so a focus that is no longer
+   *  on the canvas cannot black out the map — see `focused` below. */
+  const drawnIds = useMemo(() => new Set(nodes.map((node) => node.id)), [nodes])
 
   const hubsById = useMemo(() => new Map(map.hubs.map((h) => [h.id, h])), [map.hubs])
 
@@ -202,8 +210,24 @@ export function GraphView() {
     return out
   }, [map.links])
 
-  // Hover overrides the pin and reverts on mouse-out — the comparison loop.
-  const focused = hovered ?? pinnedNodeId
+  /**
+   * Hover overrides the pin and reverts on mouse-out — the comparison loop.
+   *
+   * Both candidates are checked against what is actually drawn, and that check
+   * is load-bearing rather than defensive. Neither id is guaranteed to survive a
+   * data change: `hovered` is only ever cleared by a later `onNodeHover`, so a
+   * node removed while the cursor sits on it leaves its id behind with no
+   * pointer event coming to correct it; and `selectedUid` is spine state that a
+   * filter edit can push out of scope entirely. An unresolvable focus makes
+   * `lit` a one-element set that matches nothing, which paints *every* node at
+   * `DIM_ALPHA` — a map that goes black for no visible reason.
+   */
+  const focused = useMemo(() => {
+    if (hovered && drawnIds.has(hovered)) return hovered
+    if (pinnedNodeId && drawnIds.has(pinnedNodeId)) return pinnedNodeId
+    return null
+  }, [hovered, pinnedNodeId, drawnIds])
+
   const lit = useMemo(() => {
     if (!focused) return null
     return new Set([focused, ...(adjacency.get(focused) ?? [])])
@@ -221,11 +245,24 @@ export function GraphView() {
   /**
    * The armed re-fit. `nodesChanged` is true only when the *event* population
    * moved, so a lens switch never arms it.
+   *
+   * The effect is keyed on the cache *object*, not on `nodesChanged`. Keying on
+   * the boolean looks equivalent and is not: two filter edits in a row both
+   * report `true`, React's `Object.is` check sees no change, and the second edit
+   * never re-arms — so every filter change after the first lands at whatever
+   * zoom the previous scope ended on. The memo returns a fresh object on each
+   * recompute, which is exactly the "something actually changed" signal wanted.
    */
   const refitArmed = useRef(false)
   useEffect(() => {
-    if (nodesChanged) refitArmed.current = true
-  }, [nodesChanged])
+    if (cached.nodesChanged) refitArmed.current = true
+  }, [cached])
+
+  /** Cleared on unmount: the clamp fires 650ms after the fit, and switching
+   *  views inside that window would otherwise call `zoom()` on a torn-down
+   *  canvas. */
+  const clampTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(clampTimer.current), [])
 
   const handleEngineStop = useCallback(() => {
     if (!refitArmed.current) return
@@ -234,14 +271,25 @@ export function GraphView() {
     if (!view || nodes.length === 0) return
     view.zoomToFit(600, 90)
     // Applied after the fit animation, otherwise the fit overwrites it.
-    window.setTimeout(() => {
-      if (view.zoom() > MAX_ZOOM) view.zoom(MAX_ZOOM, 300)
+    window.clearTimeout(clampTimer.current)
+    clampTimer.current = window.setTimeout(() => {
+      if (engine.current && engine.current.zoom() > MAX_ZOOM) engine.current.zoom(MAX_ZOOM, 300)
     }, 650)
   }, [nodes.length])
 
-  // Forces are re-tuned whenever the drawn set changes: charge has to weaken as
-  // the node count climbs or a 4,000-node map flies apart faster than the
-  // viewport can follow, and the halo has to learn the current fringe.
+  /**
+   * Forces are re-tuned whenever the drawn set changes: charge has to weaken as
+   * the node count climbs or a 4,000-node map flies apart faster than the
+   * viewport can follow, and the halo has to learn the current fringe.
+   *
+   * `canvasMounted` is in the dependency list because `engine.current` is only
+   * assigned when ForceGraph2D renders, and that is gated on a measured size.
+   * Arriving from the schedule view with data already loaded, this effect would
+   * otherwise run once against a null engine, bail, and never re-run — leaving
+   * the map on force-graph's default charge with no halo force registered at
+   * all, which is R5 silently not shipping.
+   */
+  const canvasMounted = size.width > 0 && map.events.length > 0
   useEffect(() => {
     const view = engine.current
     if (!view) return
@@ -258,7 +306,7 @@ export function GraphView() {
         node.model.kind === 'event' && node.model.fringe ? HALO_STRENGTH : 0,
       ),
     )
-  }, [nodes, graphData])
+  }, [nodes, canvasMounted])
 
   const paint = useCallback(
     (node: GraphNodeObject, ctx: CanvasRenderingContext2D, scale: number) => {
@@ -345,15 +393,18 @@ export function GraphView() {
       />
 
       <div ref={canvasRef} className="relative min-h-0 flex-1">
+        {/* Absolute rather than `Centered`: the canvas host is a positioned
+            block, not a flex container, so `flex-1` on a child is inert and the
+            message would sit at the top of an otherwise empty pane. */}
         {map.events.length === 0 ? (
-          <Centered>
-            {schedule.filterActive
+          <div className="absolute inset-0 flex items-center justify-center px-8 text-center text-[12px] text-ink-faint">
+            {map.filterActive
               ? 'No events match the current filter — the map draws whatever the filter holds.'
               : 'No events to map yet.'}
-          </Centered>
+          </div>
         ) : null}
 
-        {size.width > 0 && map.events.length > 0 ? (
+        {canvasMounted ? (
           <ForceGraph2D<GraphNodeObject, GraphLinkObject>
             ref={engine}
             width={size.width}

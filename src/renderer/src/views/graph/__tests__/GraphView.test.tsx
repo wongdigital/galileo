@@ -16,35 +16,63 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Ref } from 'react'
 import { SpineProvider, useSpine } from '@renderer/state/spine'
 import { GraphView } from '../GraphView'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 
-const { HASH_OF_EMPTY } = vi.hoisted(() => ({ HASH_OF_EMPTY: 'e3b0c44298fc1c14' }))
-
-vi.mock('react-force-graph-2d', () => ({
-  default: ({
-    graphData,
-    onNodeClick,
-    onBackgroundClick,
-  }: {
-    graphData: { nodes: { id: string }[] }
-    onNodeClick?: (node: unknown) => void
-    onBackgroundClick?: () => void
-  }) => (
-    <div data-testid="force-canvas">
-      <button type="button" data-testid="background" onClick={() => onBackgroundClick?.()} />
-      {graphData.nodes.map((node) => (
-        <button
-          key={node.id}
-          type="button"
-          data-testid={`node:${node.id}`}
-          onClick={() => onNodeClick?.(node)}
-        />
-      ))}
-    </div>
-  ),
+const { HASH_OF_EMPTY, engine } = vi.hoisted(() => ({
+  HASH_OF_EMPTY: 'e3b0c44298fc1c14',
+  /** The imperative handle GraphView drives, and a way to fire `onEngineStop`
+   *  from a test — the settle never happens without a real simulation. */
+  engine: { fits: 0, stop: null as null | (() => void) },
 }))
+
+vi.mock('react-force-graph-2d', async () => {
+  const react = await vi.importActual<typeof import('react')>('react')
+  return {
+    default: react.forwardRef(
+      (
+        {
+          graphData,
+          onNodeClick,
+          onBackgroundClick,
+          onEngineStop,
+        }: {
+          graphData: { nodes: { id: string }[] }
+          onNodeClick?: (node: unknown) => void
+          onBackgroundClick?: () => void
+          onEngineStop?: () => void
+        },
+        ref: Ref<unknown>,
+      ) => {
+        react.useImperativeHandle(ref, () => ({
+          zoomToFit: () => {
+            engine.fits += 1
+          },
+          zoom: () => 1,
+          // Both the getter (`d3Force('charge')?.strength(…)`) and the setter
+          // (`d3Force('halo', force)`) shapes, since the view uses each.
+          d3Force: () => ({ strength: () => undefined, distance: () => undefined }),
+        }))
+        engine.stop = onEngineStop ?? null
+        return (
+          <div data-testid="force-canvas">
+            <button type="button" data-testid="background" onClick={() => onBackgroundClick?.()} />
+            {graphData.nodes.map((node) => (
+              <button
+                key={node.id}
+                type="button"
+                data-testid={`node:${node.id}`}
+                onClick={() => onNodeClick?.(node)}
+              />
+            ))}
+          </div>
+        )
+      },
+    ),
+  }
+})
 
 /**
  * Asymmetric on purpose, so a lens switch is observable and so one lens has
@@ -127,6 +155,8 @@ const projection = (): DatasetProjection => ({
 })
 
 beforeEach(() => {
+  engine.fits = 0
+  engine.stop = null
   ;(window as unknown as { api: unknown }).api = {
     schedule: { refresh: vi.fn(async () => projection()) },
     changes: { acknowledge: vi.fn(async () => ({})) },
@@ -288,6 +318,50 @@ describe('GraphView — the all-fringe scope', () => {
     expect(screen.getByText(/IP has 1/)).toBeTruthy()
     // Still a map, not an empty state — every event is drawn as fringe.
     expect(screen.getByTestId('node:event:p1')).toBeTruthy()
+  })
+})
+
+/**
+ * Regression: the re-fit is armed by a scope change and consumed on engine stop.
+ *
+ * Arming off the `nodesChanged` boolean looks equivalent and is not — two filter
+ * edits in a row both report `true`, React's dep check sees no change, and the
+ * second edit never re-arms. The symptom is subtle enough to survive a manual
+ * pass: the first filter edit frames correctly and every one after it lands at
+ * the previous scope's zoom, which reads as "the graph is being weird" rather
+ * than as a bug with a cause.
+ */
+describe('GraphView — re-fitting on scope change', () => {
+  const settle = () => act(() => engine.stop?.())
+
+  it('re-fits on every filter edit, not just the first', async () => {
+    await mountSized()
+    settle()
+    const afterFirstMount = engine.fits
+    expect(afterFirstMount).toBeGreaterThan(0)
+
+    act(() => spine.setFilter({ ...spine.filter, text: 'Panel One' }))
+    await waitFor(() => expect(screen.queryByTestId('node:event:p2')).toBeNull())
+    settle()
+    expect(engine.fits).toBe(afterFirstMount + 1)
+
+    // The second consecutive edit is the one the boolean latch dropped.
+    act(() => spine.setFilter({ ...spine.filter, text: 'Panel Two' }))
+    await waitFor(() => expect(screen.queryByTestId('node:event:p1')).toBeNull())
+    settle()
+    expect(engine.fits).toBe(afterFirstMount + 2)
+  })
+
+  it('does not re-fit on a lens switch — the reorganization is the point (R3)', async () => {
+    await mountSized()
+    settle()
+    const before = engine.fits
+
+    act(() => spine.setLens('people'))
+    await screen.findByTestId('node:person:ada vance')
+    settle()
+
+    expect(engine.fits).toBe(before)
   })
 })
 

@@ -362,6 +362,32 @@ describe('useEntityMap — identity stability', () => {
   })
 
   /**
+   * Regression: starring re-derives `filteredUids` upstream.
+   *
+   * `useSchedule`'s match context depends on `stars`, and `applyFilter` is a
+   * `.filter()` call that always allocates — so a star toggle hands this hook a
+   * new array with *identical contents*. Passing it through would invalidate the
+   * graph memo, rebuild every link object, and reheat the simulation: the user
+   * stars one dot and the constellation re-anneals under the cursor. The scope
+   * has to hold its identity when nothing actually moved.
+   */
+  it('holds the scope and the links steady across a star toggle', async () => {
+    const view = await mountReady()
+    await waitFor(() => expect(view.result.current.map.events.length).toBeGreaterThan(0))
+    const { scopeUids, links, hubs } = view.result.current.map
+
+    await act(async () => {
+      await view.result.current.spine.toggleStar(EVENTS[0]!)
+    })
+
+    expect(view.result.current.map.scopeUids).toBe(scopeUids)
+    expect(view.result.current.map.links).toBe(links)
+    expect(view.result.current.map.hubs).toBe(hubs)
+    // The star itself still landed — this is stability, not staleness.
+    expect(view.result.current.map.events.find((e) => e.uid === 'p1')?.starred).toBe(true)
+  })
+
+  /**
    * The scope array is not shared with the harness's own `useSchedule` — this
    * hook holds its own instance, so the two derive equal contents down separate
    * memo chains. What has to hold is that *this* one moves when the filter moves

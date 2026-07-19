@@ -25,6 +25,7 @@
  */
 
 import { useMemo, useRef } from 'react'
+
 import { buildOfferings } from '@shared/enrichment'
 import {
   LENSES,
@@ -93,6 +94,10 @@ export interface EntityMapModel {
   /** The scope the map was built over. Identity-stable, and the signal the view
    *  re-fits on: a filter edit changes it, a lens switch does not. */
   scopeUids: string[]
+  /** Surfaced here so the view can explain an empty scope without mounting a
+   *  second `useSchedule` — its layers are per-instance, so a second call would
+   *  re-run `classifyAll` and `applyFacets` over the whole corpus. */
+  filterActive: boolean
 }
 
 /** Returned whenever there is no index to build from, so "no lens yet" does not
@@ -164,12 +169,26 @@ export function useEntityMap(): EntityMapModel {
    * cannot disagree — but restricting here rather than dropping unresolvable
    * event nodes below is what makes that structural: the builder's counts and
    * links describe exactly the nodes that get drawn, with no dangling link
-   * pointing at an event the view never received. The common case allocates
-   * nothing and returns `filteredUids` itself, identity intact.
+   * pointing at an event the view never received.
+   *
+   * The comparison against the previous scope is not an optimization, it is the
+   * identity contract. `useSchedule` rebuilds `filteredUids` whenever `stars` or
+   * `changes` move — `applyFilter` is a `.filter()` call and always allocates —
+   * so a single star toggle hands this hook a *new array with identical
+   * contents*. Passing that straight through would invalidate the graph memo,
+   * rebuild every link object, and reheat the simulation: the user stars one dot
+   * and watches the constellation re-anneal under the cursor. Holding the
+   * previous array when nothing actually moved is what stops that.
    */
+  const scopeRef = useRef<string[]>([])
   const scopeUids = useMemo(() => {
     const live = schedule.filteredUids.filter((uid) => schedule.byUid.has(uid))
-    return live.length === schedule.filteredUids.length ? schedule.filteredUids : live
+    const previous = scopeRef.current
+    if (previous.length === live.length && previous.every((uid, i) => uid === live[i])) {
+      return previous
+    }
+    scopeRef.current = live
+    return live
   }, [schedule.filteredUids, schedule.byUid])
 
   // Layer 3 — the map itself, under the active lens over the active filter.
@@ -259,5 +278,6 @@ export function useEntityMap(): EntityMapModel {
     connectedCount: graph.connectedCount,
     fringeCount: graph.fringeCount,
     scopeUids,
+    filterActive: schedule.filterActive,
   }
 }
