@@ -99,7 +99,7 @@ describe('sanitizeEvent', () => {
     expect(out.end).toBe('2026-07-26T23:59:59-07:00')
   })
 
-  it('clamps a >12h non-ambient event even though it ends inside the con', () => {
+  it('clamps a >12h event on a capped track even though it ends inside the con', () => {
     const out = sanitizeEvent(
       event({ start: '2026-07-23T08:00:00-07:00', end: '2026-07-23T23:00:00-07:00', track: '1: PROGRAMS' }),
       opts,
@@ -108,7 +108,7 @@ describe('sanitizeEvent', () => {
     expect(out.sanitized?.reason).toBe('duration-exceeds-cap')
   })
 
-  it('allows a long ambient block that ends inside the con', () => {
+  it('allows a long block on an uncapped track that ends inside the con', () => {
     // 899 GAMES events run 4h+; a 13h drop-in hall is real, not a data error.
     const out = sanitizeEvent(
       event({ start: '2026-07-23T10:00:00-07:00', end: '2026-07-23T23:00:00-07:00', track: '6: GAMES' }),
@@ -117,12 +117,25 @@ describe('sanitizeEvent', () => {
     expect(out.sanitized).toBeUndefined()
   })
 
-  it('allows a genuinely multi-day ambient block inside the con window', () => {
+  it('allows a genuinely multi-day block on an uncapped track inside the con window', () => {
     const out = sanitizeEvent(
       event({ start: '2026-07-23T10:00:00-07:00', end: '2026-07-26T16:00:00-07:00', track: '6: GAMES' }),
       opts,
     )
     expect(out.sanitized).toBeUndefined()
+  })
+
+  it('produces a short clamped duration when the event starts late in the day', () => {
+    // The clamp is min(end-of-day, start+12h), so a late start yields a *short*
+    // event, not a long one. U4's event classifier keys ambient off duration,
+    // and this is the case where a clamped event lands well under its 8h
+    // all-day threshold.
+    const out = sanitizeEvent(
+      event({ start: '2026-07-26T23:00:00-07:00', end: '2028-07-26T18:00:00-07:00', track: '6: GAMES' }),
+      opts,
+    )
+    expect(out.end).toBe('2026-07-26T23:59:59-07:00')
+    expect(Date.parse(out.end!) - Date.parse(out.start!)).toBeLessThan(60 * 60 * 1000)
   })
 
   it('clamps an end that precedes its own start', () => {

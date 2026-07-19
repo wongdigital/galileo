@@ -9,7 +9,7 @@ export { PACIFIC, isoFromInstant, parseCategories, parseIcs, toLocalIso, unfold 
 export type { RawIcsEvent } from './parse-ics'
 export { decodeEntities, parseListDescriptions } from './parse-list'
 export type { ListEntry } from './parse-list'
-export { AMBIENT_TRACKS, deriveConLastDay, sanitizeEvent, sanitizeEvents } from './sanitize'
+export { UNCAPPED_DURATION_TRACKS, deriveConLastDay, sanitizeEvent, sanitizeEvents } from './sanitize'
 export type { SanitizeOptions } from './sanitize'
 export { buildDataset } from './join'
 export type { BuildOptions, BuiltDataset } from './join'

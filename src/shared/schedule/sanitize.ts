@@ -12,15 +12,25 @@
 import { PACIFIC, isoFromInstant } from './parse-ics'
 import type { ScheduleEvent } from './types'
 
-/** Tracks whose events are drop-in halls, where a 13-hour block is real. */
-export const AMBIENT_TRACKS: ReadonlySet<string> = new Set(['6: GAMES'])
+/**
+ * Tracks exempt from the duration cap, because a 13-hour block there is real
+ * rather than a feed error.
+ *
+ * Deliberately NOT the same set as U4's `DROP_IN_TRACKS`, despite the overlap.
+ * This one answers "on which tracks is a >12h duration plausible?" — Games
+ * only, since Autographs tops out at 4.5h and Portfolio Review at 4h in the
+ * live feed. U4's answers "on which tracks does a 4h+ block mean come
+ * anytime?" — a wider set. Widening this one to match would stop clamping a
+ * 13-hour Autographs event, which is almost certainly a real data error.
+ */
+export const UNCAPPED_DURATION_TRACKS: ReadonlySet<string> = new Set(['6: GAMES'])
 
 const MAX_DURATION_HOURS = 12
 
 export interface SanitizeOptions {
   /** Last local con date, `YYYY-MM-DD`. Null disables clamping entirely. */
   conLastDay: string | null
-  ambientTracks?: ReadonlySet<string>
+  uncappedTracks?: ReadonlySet<string>
   maxDurationHours?: number
   timeZone?: string
 }
@@ -54,17 +64,17 @@ export function sanitizeEvent(event: ScheduleEvent, options: SanitizeOptions): S
   const endMs = Date.parse(end)
   if (Number.isNaN(startMs) || Number.isNaN(endMs)) return event
 
-  const ambient = (options.ambientTracks ?? AMBIENT_TRACKS).has(event.track ?? '')
+  const uncapped = (options.uncappedTracks ?? UNCAPPED_DURATION_TRACKS).has(event.track ?? '')
   const capHours = options.maxDurationHours ?? MAX_DURATION_HOURS
   const durationHours = (endMs - startMs) / 3_600_000
 
   // An end past the last con day is wrong regardless of track. A long duration
-  // is only wrong outside the drop-in halls. A negative duration is wrong
-  // everywhere, and lands under the duration check rather than inventing a
-  // third reason code.
+  // is only wrong on capped tracks. A negative duration is wrong everywhere,
+  // and lands under the duration check rather than inventing a third reason
+  // code.
   const reason = end.slice(0, 10) > conLastDay
     ? 'beyond-con-end'
-    : !ambient && (durationHours > capHours || durationHours < 0)
+    : !uncapped && (durationHours > capHours || durationHours < 0)
       ? 'duration-exceeds-cap'
       : null
   if (!reason) return event
