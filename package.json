@@ -5,6 +5,11 @@
   "type": "module",
   "description": "Comic-Con San Diego schedule data pipeline and (eventually) a better schedule app",
   "scripts": {
-    "fetch": "node scripts/fetch.mjs"
+    "fetch": "node scripts/fetch.mjs",
+    "scan-franchises": "node scripts/scan-franchises.mjs",
+    "enrich": "node --env-file=.env scripts/enrich.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.3"
   }
 }

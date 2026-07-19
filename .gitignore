@@ -8,6 +8,11 @@ tests/fixtures/live/
 data/batch-*/
 *.batch-request.jsonl
 *.batch-results.jsonl
+# Enrichment compile working state: batch id/retry list, and the review bucket
+# (which quotes rejected spans lifted from Sched prose).
+data/.batch-state.json
+data/.batch-retry.json
+data/review-bucket.json
 
 # --- Secrets / local config ---
 .env

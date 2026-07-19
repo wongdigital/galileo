@@ -1,0 +1,5 @@
+{
+  "$comment": "Hand-maintained canonicalization overrides, applied LAST in the merge so a batch rerun never clobbers a correction. Keys are lowercased surface_text as it appears in Sched prose; values are franchise ids from data/franchise-seed.json. This is how an `other`-bucketed entity gets promoted to a canonical without re-running the batch.",
+  "franchises": {},
+  "people": {}
+}
