@@ -204,10 +204,12 @@ describe('ICS envelope', () => {
     expect(stamped.ics).toContain('DTSTAMP:20260720T183000Z')
   })
 
-  it('uses CRLF line endings as RFC 5545 requires', () => {
-    const lines = ics.split('\n')
-    // The final line carries no terminator, so it is excluded from the check.
-    expect(lines.slice(0, -1).every((line) => line.endsWith('\r'))).toBe(true)
-    expect(lines.at(-1)).toBe('END:VCALENDAR')
+  it('breaks every line with CRLF as RFC 5545 requires — a bare LF can break import', () => {
+    // Counted rather than split: a bare LF anywhere is the failure, and the
+    // unterminated final line must not be mistaken for one.
+    const bareLineFeeds = [...ics].filter((char, i) => char === '\n' && ics[i - 1] !== '\r')
+    expect(bareLineFeeds).toHaveLength(0)
+    expect(ics.split('\r\n').length).toBeGreaterThan(1)
+    expect(ics.endsWith('END:VCALENDAR')).toBe(true)
   })
 })
