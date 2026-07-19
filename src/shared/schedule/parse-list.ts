@@ -59,8 +59,10 @@ export function parseListDescriptions(html: string): Map<string, ListEntry> {
       }
     }
     // Multi-day events are listed once per day with identical tags; the first
-    // listing wins.
-    if (!byUid.has(uid)) byUid.set(uid, { shortId, subtypes })
+    // listing wins. Deduped, because Sched renders some events' tag list twice
+    // inside one type block (107 of 3,474 in the live feed) — a doubled tag is
+    // markup noise, not two facts.
+    if (!byUid.has(uid)) byUid.set(uid, { shortId, subtypes: [...new Set(subtypes)] })
   }
   return byUid
 }

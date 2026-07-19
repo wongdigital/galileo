@@ -12,7 +12,7 @@
  * leave without a CANCELLED flag first.
  */
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventCard } from '../EventCard'
 import { SpineProvider, useSpine } from '@renderer/state/spine'
@@ -330,6 +330,36 @@ describe('source metadata', () => {
     expect(ip.textContent).not.toContain('A New Hope')
     // Unseeded: shown as extracted.
     expect(ip.textContent).toContain('Kekkaishi')
+  })
+
+  it('dedupes and caps a runaway tag list, keeping the prose reachable', async () => {
+    // Real feed behaviour twice over: Sched doubles some tag lists in its
+    // markup (a stale snapshot can still carry the doubles), and some events
+    // genuinely wear most of the taxonomy. Neither may bury the description.
+    const TAGS = ['Tag1', 'Tag2', 'Tag3', 'Tag4', 'Tag5', 'Tag6', 'Tag7', 'Tag8']
+    api.schedule.refresh.mockResolvedValue(
+      projection({
+        events: [
+          event('taggy', {
+            title: 'Taggy Panel',
+            subtypes: [...TAGS, ...TAGS],
+            description: 'Prose survives.',
+          }),
+        ],
+      }),
+    )
+    await mountCard('taggy')
+    await screen.findByText('Taggy Panel')
+
+    const tags = await screen.findByTestId('event-source-tags')
+    // Deduped: one chip per tag, not two.
+    expect(tags.textContent?.match(/Tag1/g)).toHaveLength(1)
+    // Capped: the seventh and eighth ride in the overflow chip's tooltip.
+    expect(tags.textContent).not.toContain('Tag7')
+    const more = within(tags).getByText('+2')
+    expect(more.getAttribute('title')).toBe('Tag7, Tag8')
+    // The description is still on the card, below the fold at worst.
+    expect(screen.getByTestId('event-description').textContent).toContain('Prose survives.')
   })
 
   it('shows no extraction sections when the event has no trusted entry', async () => {

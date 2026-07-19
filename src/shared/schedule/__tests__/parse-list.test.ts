@@ -36,6 +36,19 @@ describe('parseListDescriptions', () => {
     expect(parseListDescriptions(repeated).get(UID_PANEL)?.shortId).toBe('AAAAA')
   })
 
+  it('dedupes a tag list Sched rendered twice in one type block', () => {
+    // Real feed behaviour: some events repeat the entire tag sequence inside
+    // one sched-event-type div. One tag, one fact.
+    const html = `<a href="event/DDDDD/x" id="${'4'.repeat(32)}" class="name">x</a>
+      <div class="sched-event-type">
+        <a href="/type/1%3A+PROGRAMS/Comics">Comics</a>
+        <a href="/type/1%3A+PROGRAMS/Fandom">Fandom</a>
+        <a href="/type/1%3A+PROGRAMS/Comics">Comics</a>
+        <a href="/type/1%3A+PROGRAMS/Fandom">Fandom</a>
+      </div>`
+    expect(parseListDescriptions(html).get('4'.repeat(32))?.subtypes).toEqual(['Comics', 'Fandom'])
+  })
+
   it('returns an empty map for a page with no event anchors', () => {
     expect(parseListDescriptions(LIST_HTML_EMPTY).size).toBe(0)
     expect(parseListDescriptions('').size).toBe(0)
