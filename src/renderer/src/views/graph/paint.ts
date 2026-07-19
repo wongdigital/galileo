@@ -21,14 +21,21 @@
  * radius doing it — a hub covering four events looks twice the hub covering one,
  * not four times, which is the honest reading of a circle.
  *
- * ## Labels scale, they do not switch on (R12)
+ * ## Labels scale, they do not switch on (R12) — and events opt out entirely
  *
- * There is no degree threshold at which a label appears. Instead every hub
+ * There is no degree threshold at which a hub label appears. Instead every hub
  * carries a zoom at which its label becomes readable, and that zoom falls
  * continuously as degree climbs: the biggest hubs are labelled at any zoom, the
  * smallest wait until the user comes closer. The dense core therefore thins out
  * gradually as you zoom rather than flipping between "no labels" and "all
  * labels, overlapping".
+ *
+ * Event titles paint only on the pinned dot. They once appeared past a deep
+ * zoom, and the feel pass showed what that costs: hundreds of grey titles
+ * fogging the layer the lens is actually about (the people, the franchises).
+ * A dot is never anonymous for the lack of them — hover names it in the
+ * tooltip, the click names it on the card — so the painted title's one job is
+ * anchoring the open card to its dot.
  *
  * Dimming is a single `globalAlpha` multiplier rather than a second palette,
  * so a dimmed node keeps its own colour and simply recedes (R6/R13).
@@ -131,9 +138,6 @@ function hubLabelZoom(degree: number): number {
   return 2.6 / Math.sqrt(degree + 1)
 }
 
-/** Event titles are the densest text on the canvas and the least useful at a
- *  distance, so they wait longer than any hub. */
-const EVENT_LABEL_ZOOM = 2.6
 
 export function paintMapNode(
   node: PaintMapNode,
@@ -253,7 +257,9 @@ function paintEvent(
     changeDot(ctx, x + r + 2, y - r - 2, colors.new)
   }
 
-  if (node.dimmed || scale < EVENT_LABEL_ZOOM) return
+  // Only the pinned dot is titled — see the header. `dimmed` still wins: a
+  // pinned event under someone else's hover preview recedes whole.
+  if (node.dimmed || !node.pinned) return
 
   const size = Math.max(8, 10 / scale)
   ctx.font = `${size}px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`
