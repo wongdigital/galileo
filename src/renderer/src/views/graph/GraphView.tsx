@@ -35,18 +35,48 @@ import { useNodeCache, type GraphLinkObject, type GraphNodeObject } from './useN
 const ALPHA_MIN = 0.12
 const VELOCITY_DECAY = 0.35
 
-function useSize(ref: React.RefObject<HTMLDivElement | null>): { width: number; height: number } {
+/**
+ * Ceiling on the post-fit zoom. A one-node neighbourhood has a zero-area
+ * bounding box, and fitting that to the viewport magnifies a single dot into a
+ * full-pane disc. Roughly "one node reads as a node, not as the background".
+ */
+const MAX_ZOOM = 2.5
+
+/**
+ * Measures the canvas host, and attaches to it via a **callback ref** rather
+ * than a `useRef` object.
+ *
+ * The distinction is load-bearing. This component early-returns the seed prompt
+ * when nothing is seeded, so the canvas element does not exist on first mount.
+ * An effect keyed on a ref object would run once, find `ref.current === null`,
+ * bail, and never run again — the ref's identity never changes, so seeding
+ * later mounts the canvas with no observer watching it. Size stays 0, the
+ * `size.width > 0` guard below keeps the graph unmounted, and you get a blank
+ * pane that reports "showing 24 of 65" because the data layer was right all
+ * along.
+ *
+ * A callback ref is state, so mounting the element re-runs the effect.
+ */
+function useSize(): [(element: HTMLDivElement | null) => void, { width: number; height: number }] {
   const [size, setSize] = useState({ width: 0, height: 0 })
+  const [element, setElement] = useState<HTMLDivElement | null>(null)
+
   useEffect(() => {
-    const element = ref.current
-    if (!element || typeof ResizeObserver === 'undefined') return
+    if (!element) return
+    if (typeof ResizeObserver === 'undefined') {
+      // No observer (older webview, test env): take one measurement so the
+      // graph still renders instead of silently staying blank.
+      setSize({ width: element.clientWidth, height: element.clientHeight })
+      return
+    }
     const observer = new ResizeObserver(([entry]) => {
       if (entry) setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
     })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [ref])
-  return size
+  }, [element])
+
+  return [setElement, size]
 }
 
 export function GraphView() {
@@ -55,9 +85,8 @@ export function GraphView() {
   const graph = useGraph()
 
   const shellRef = useRef<HTMLDivElement>(null)
-  const canvasRef = useRef<HTMLDivElement>(null)
   const engine = useRef<ForceGraphMethods<GraphNodeObject, GraphLinkObject> | undefined>(undefined)
-  const size = useSize(canvasRef)
+  const [canvasRef, size] = useSize()
 
   const [inspected, setInspected] = useState<GraphLink | null>(null)
   const [hovered, setHovered] = useState<GraphLink | null>(null)
@@ -96,9 +125,24 @@ export function GraphView() {
   // Re-fit only when the node set changed. A lens switch keeps the same nodes,
   // and re-fitting on every switch would fight the reorganization the user is
   // watching.
+  //
+  // The clamp matters more than it looks. `zoomToFit` scales the bounding box of
+  // the nodes to the viewport, and a lone seed's bounding box is one dot — so a
+  // zero-edge seed, which is a routine outcome under a narrow filter, gets
+  // magnified until a single node fills the pane as a featureless disc. Fit,
+  // then pull back to something a human would recognise as a graph.
   useEffect(() => {
     if (!nodesChanged || nodes.length === 0) return
-    const id = window.setTimeout(() => engine.current?.zoomToFit(600, 90), 420)
+    const id = window.setTimeout(() => {
+      const view = engine.current
+      if (!view) return
+      view.zoomToFit(600, 90)
+      // Applied after the fit animation, otherwise the fit overwrites it.
+      window.setTimeout(() => {
+        const current = view.zoom()
+        if (current > MAX_ZOOM) view.zoom(MAX_ZOOM, 300)
+      }, 650)
+    }, 420)
     return () => window.clearTimeout(id)
   }, [nodesChanged, nodes.length])
 

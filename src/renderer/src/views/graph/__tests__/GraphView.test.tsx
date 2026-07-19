@@ -91,6 +91,22 @@ beforeEach(() => {
 // never registered — without this each test renders into the previous DOM.
 afterEach(cleanup)
 
+/**
+ * jsdom has no layout engine and no ResizeObserver, so the canvas host measures
+ * 0 and the render guard keeps the graph unmounted. Only the test that asserts
+ * the canvas mounts needs this; the rest are about the surrounding chrome.
+ */
+function sizeTheDom(): void {
+  globalThis.ResizeObserver = class {
+    constructor(private readonly cb: ResizeObserverCallback) {}
+    observe(target: Element): void {
+      this.cb([{ contentRect: { width: 1200, height: 800 } } as ResizeObserverEntry], this)
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver
+}
+
 const mount = () =>
   render(
     <SpineProvider>
@@ -111,6 +127,28 @@ describe('GraphView', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Star Panel One')).toBeTruthy())
     expect(screen.queryByText('Start from something')).toBeNull()
+  })
+
+  /**
+   * Regression: seeding from the prompt left a permanently blank canvas.
+   *
+   * The canvas host does not exist while the prompt is up, so a size effect
+   * keyed on a ref *object* ran once against `null` and never again — the ref's
+   * identity never changes. Seeding mounted the canvas with nothing measuring
+   * it, width stayed 0, and the render guard held the graph unmounted while the
+   * toolbar cheerfully reported "showing 24 of 65".
+   *
+   * Asserting the prompt disappears is not enough; that passed throughout. The
+   * assertion has to be that the graph *appears*.
+   */
+  it('mounts the canvas after seeding, not just dismisses the prompt', async () => {
+    sizeTheDom()
+    mount()
+    expect(screen.queryByTestId('force-canvas')).toBeNull()
+
+    fireEvent.click(await screen.findByText('Panel One'))
+
+    await waitFor(() => expect(screen.getByTestId('force-canvas')).toBeTruthy())
   })
 
   it('points a zero-edge seed at the lens that does have edges', async () => {
