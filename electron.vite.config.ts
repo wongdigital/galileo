@@ -30,6 +30,11 @@ export default defineConfig({
       alias: {
         '@renderer': resolve('src/renderer/src'),
         '@shared': resolve('src/shared'),
+        // Committed data tables the renderer imports directly. Aliased rather
+        // than reached for with `../../../../data` so the compiled enrichment
+        // index can be declared as a module in env.d.ts — otherwise a typecheck
+        // walks 1.2 MB of JSON to infer a type nothing reads.
+        '@data': resolve('data'),
       },
     },
     build: { rollupOptions: { input: resolve('src/renderer/index.html') } },

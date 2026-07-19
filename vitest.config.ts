@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       '@renderer': resolve('src/renderer/src'),
       '@shared': resolve('src/shared'),
+      '@data': resolve('data'),
     },
   },
   test: {

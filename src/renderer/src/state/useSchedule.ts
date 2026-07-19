@@ -46,6 +46,9 @@ export interface ScheduleModel {
 
   /** Filtered across all five days, which is the number the sidebar reports. */
   filteredCount: number
+  /** The same set, by UID — what the graph seeds from when the user asks it to
+   *  show the current filter rather than one event. */
+  filteredUids: string[]
   totalCount: number
   filterActive: boolean
 
@@ -152,6 +155,7 @@ export function useSchedule(): ScheduleModel {
     candidates: base.candidates,
     matchContext,
     filteredCount: filtered.length,
+    filteredUids: filtered.map((c) => c.uid),
     totalCount: base.candidates.length,
     filterActive: !isEmptyFilter(filter),
     days,

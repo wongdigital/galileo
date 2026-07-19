@@ -11,6 +11,7 @@ import {
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import { normalizeStars, toggleStar, unstar, type StarRecord } from '@shared/stars'
 import { EMPTY_FILTER, type FilterState } from '@shared/filter'
+import type { LensId } from '@shared/graph'
 
 /**
  * The state spine — the single container both views read and write (R10, R12).
@@ -59,6 +60,33 @@ export interface SpineState {
   /** Which of the five days the list is showing. Null before data arrives. */
   activeDay: string | null
   setActiveDay: (day: string | null) => void
+
+  /** Which rule the graph's edges follow. Independent of the seed, so switching
+   *  it keeps the node set and swaps only the links (R6). */
+  lens: LensId
+  setLens: (lens: LensId) => void
+  /** What the graph is currently centred on. Null is the designed prompt state,
+   *  never an empty canvas and never the whole corpus. */
+  seed: GraphSeed | null
+  setSeed: (seed: GraphSeed | null) => void
+}
+
+/**
+ * The seed carries the lens it was expanded under, not just the uids.
+ *
+ * That is what lets the node set survive a lens switch while still being a
+ * derived value rather than stored state: the nodes are `expandEgo(seed.lens)`,
+ * the links are computed under the *active* lens, and a node with no edge under
+ * the new lens keeps its place and dims to the rim. Storing the node list
+ * instead would make it the one projection the spine holds — exactly the class
+ * of desync the derived-state rule exists to prevent.
+ */
+export interface GraphSeed {
+  uids: string[]
+  lens: LensId
+  hops: 1 | 2
+  /** Where the seed came from, so the UI can explain what it is showing. */
+  origin: 'selection' | 'stars' | 'filter'
 }
 
 const SpineContext = createContext<SpineState | null>(null)
@@ -85,6 +113,12 @@ export function SpineProvider({ children }: { children: ReactNode }) {
 
   const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER)
   const [activeDay, setActiveDay] = useState<string | null>(null)
+
+  // IP is the opening lens because it is the one with data across the whole
+  // corpus — people covers Programs and Autographs, IP covers Anime and Games,
+  // and the app boots into neither half in particular.
+  const [lens, setLens] = useState<LensId>('ip')
+  const [seed, setSeed] = useState<GraphSeed | null>(null)
 
   // Guards the effect against StrictMode's double-invoke, which would otherwise
   // fire two live fetches at Sched on every mount in development.
@@ -205,6 +239,10 @@ export function SpineProvider({ children }: { children: ReactNode }) {
       setFilter,
       activeDay,
       setActiveDay,
+      lens,
+      setLens,
+      seed,
+      setSeed,
     }),
     [
       view,
@@ -220,6 +258,8 @@ export function SpineProvider({ children }: { children: ReactNode }) {
       removeStar,
       filter,
       activeDay,
+      lens,
+      seed,
     ],
   )
 

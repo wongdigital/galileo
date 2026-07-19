@@ -2,14 +2,15 @@ import { SpineProvider, useSpine, type ViewMode } from './state/spine'
 import { useSchedule } from './state/useSchedule'
 import { FiltersTab } from './sidebar/FiltersTab'
 import { ScheduleView } from './views/schedule/ScheduleView'
+import { GraphView } from './views/graph/GraphView'
 
 /**
  * App frame: title bar, view toggle, sidebar, view surface.
  *
- * U2 shipped the frame and the toggle; U5 replaces the schedule placeholder
- * with the real planning surface and fills the sidebar. The graph surface stays
- * a placeholder until U6 — the toggle already proves the shared-state contract,
- * because both sides read the same spine.
+ * U2 shipped the frame and the toggle; U5 filled in the planning surface and
+ * the sidebar; U6 replaced the graph placeholder with the ego network. Both
+ * views read and write the same spine, which is what makes a star set in one
+ * appear in the other with no wiring between them (R10).
  */
 
 const VIEWS: { id: ViewMode; label: string }[] = [
@@ -57,30 +58,6 @@ function SelectionReadout() {
       ) : (
         <span>no selection</span>
       )}
-    </div>
-  )
-}
-
-/** Placeholder until U6. Reads the spine so the toggle still demonstrates that
- *  selection and stars survive a view switch. */
-function GraphView() {
-  const { selectedUid } = useSpine()
-  const { byUid, filteredCount } = useSchedule()
-  const selected = selectedUid ? byUid.get(selectedUid) : null
-
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-      <span
-        className="block h-3.5 w-3.5 rounded-full"
-        style={{
-          background: selected ? 'var(--color-lumen-bright)' : 'var(--color-ink-fringe)',
-          boxShadow: selected ? '0 0 22px 4px var(--color-lumen-dim)' : 'none',
-        }}
-      />
-      <span className="max-w-[280px] text-[12px] leading-snug text-ink-faint">
-        {selected ? selected.title : `${filteredCount.toLocaleString()} events in the filter`}
-      </span>
-      <span className="text-[11px] text-ink-fringe">U6 replaces this with the ego network</span>
     </div>
   )
 }
