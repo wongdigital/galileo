@@ -10,7 +10,18 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
-    build: { rollupOptions: { input: resolve('src/preload/index.ts') } },
+    build: {
+      rollupOptions: {
+        input: resolve('src/preload/index.ts'),
+        // Forced to CJS `index.js`. Because package.json is `"type": "module"`,
+        // the default emit is `index.mjs` — which main's `preload:` path does
+        // not point at, and which a sandboxed renderer cannot load anyway
+        // (Electron has no ESM preload under `sandbox: true`). The failure is
+        // silent: the bridge never attaches, `window.api` stays undefined, and
+        // the app renders its empty state forever with nothing in the log.
+        output: { format: 'cjs', entryFileNames: 'index.js' },
+      },
+    },
   },
   renderer: {
     root: resolve('src/renderer'),
