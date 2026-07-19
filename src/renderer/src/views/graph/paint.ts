@@ -1,15 +1,37 @@
 /**
- * Canvas painting for the graph.
+ * Canvas painting for the entity map.
  *
  * Colours are read from the Observatory custom properties at first paint rather
  * than hard-coded — the tokens in `observatory.css` are the single source, and a
  * canvas that carried its own hex values would be the one surface that quietly
  * stopped matching the rest of the app.
  *
- * The node encodings are lens-independent and mean exactly what they mean in the
- * 5-day list, so a starred-and-cancelled event is as loud here as it is there
- * (AE4): star is a warm ring, updated/moved is an amber mark, cancelled is
- * desaturated and struck through.
+ * ## Two kinds of mark
+ *
+ * **Event dots** are small and uniform. Their encodings are lens-independent and
+ * mean exactly what they mean in the 5-day list and on the card, so a
+ * starred-and-cancelled event is as loud here as it is there (R10): star is a
+ * warm ring, updated/moved is an amber mark, cancelled is desaturated and struck
+ * through. Fringe dots — events no hub claims — keep every one of those marks and
+ * lose only the glow, which is what makes them read as receding to the rim
+ * without ever being hidden (R5).
+ *
+ * **Entity hubs** are sized by how many in-scope events they cover. Radius goes
+ * as the square root of degree so that *area* tracks the count rather than
+ * radius doing it — a hub covering four events looks twice the hub covering one,
+ * not four times, which is the honest reading of a circle.
+ *
+ * ## Labels scale, they do not switch on (R12)
+ *
+ * There is no degree threshold at which a label appears. Instead every hub
+ * carries a zoom at which its label becomes readable, and that zoom falls
+ * continuously as degree climbs: the biggest hubs are labelled at any zoom, the
+ * smallest wait until the user comes closer. The dense core therefore thins out
+ * gradually as you zoom rather than flipping between "no labels" and "all
+ * labels, overlapping".
+ *
+ * Dimming is a single `globalAlpha` multiplier rather than a second palette,
+ * so a dimmed node keeps its own colour and simply recedes (R6/R13).
  */
 
 import type { RowState } from '@renderer/state/derive'
@@ -52,69 +74,164 @@ export function palette(): Palette {
   return cached
 }
 
-export interface PaintNode {
+export interface PaintEventNode {
+  kind: 'event'
   x?: number
   y?: number
-  seed: boolean
+  title: string
+  /** No hub claims it — the halo (R5). Present, dimmer, still fully encoded. */
   fringe: boolean
   starred: boolean
   states: RowState[]
-  title: string
-  selected: boolean
+  /** This event's card is open. */
+  pinned: boolean
+  dimmed: boolean
 }
 
-const RADIUS = { seed: 7, normal: 4.5, fringe: 2.5 } as const
-
-function nodeRadius(node: PaintNode): number {
-  if (node.seed) return RADIUS.seed
-  return node.fringe ? RADIUS.fringe : RADIUS.normal
+export interface PaintHubNode {
+  kind: 'entity'
+  x?: number
+  y?: number
+  label: string
+  /** In-scope events covered. Drives size and label legibility (R12). */
+  degree: number
+  pinned: boolean
+  dimmed: boolean
 }
 
-function nodeColor(node: PaintNode, colors: Palette): string {
-  if (node.states.includes('cancelled')) return colors.cancelled
-  if (node.fringe) return colors.fringe
-  if (node.seed) return colors.lumenBright
-  return colors.lumen
+export type PaintMapNode = PaintEventNode | PaintHubNode
+
+const EVENT_RADIUS = { core: 2.4, fringe: 1.8 } as const
+const DIM_ALPHA = 0.1
+const FRINGE_ALPHA = 0.5
+
+/** Area-proportional in degree, capped so one enormous hub cannot swallow the
+ *  view. Exported because the pointer hit area has to agree with it. */
+export function hubRadius(degree: number): number {
+  return Math.min(16, 3.5 + Math.sqrt(degree) * 1.7)
 }
 
 /**
- * Glow via `shadowBlur` — the Observatory's luminous-node look, and the reason
- * the ground is a blue-cast near-black rather than pure #000. Fringe nodes get
- * none of it, which is what makes them read as receding to the rim.
+ * Takes only what sizing actually depends on, so the hit-area painter can pass
+ * the map's own node model without first dressing it up as a paint node.
  */
-export function paintNode(node: PaintNode, ctx: CanvasRenderingContext2D, scale: number): void {
+export function nodeRadius(
+  node: { kind: 'entity'; degree: number } | { kind: 'event'; fringe: boolean },
+): number {
+  if (node.kind === 'entity') return hubRadius(node.degree)
+  return node.fringe ? EVENT_RADIUS.fringe : EVENT_RADIUS.core
+}
+
+/**
+ * The zoom at which a hub's label becomes readable — continuous in degree, no
+ * threshold (R12). A 200-event hub is labelled while zoomed all the way out; a
+ * 2-event hub waits until the user is well inside its neighbourhood.
+ */
+function hubLabelZoom(degree: number): number {
+  return 2.6 / Math.sqrt(degree + 1)
+}
+
+/** Event titles are the densest text on the canvas and the least useful at a
+ *  distance, so they wait longer than any hub. */
+const EVENT_LABEL_ZOOM = 2.6
+
+export function paintMapNode(
+  node: PaintMapNode,
+  ctx: CanvasRenderingContext2D,
+  scale: number,
+): void {
   const { x, y } = node
   if (x === undefined || y === undefined) return
   const colors = palette()
   const r = nodeRadius(node)
-  const color = nodeColor(node, colors)
 
   ctx.save()
+  ctx.globalAlpha = node.dimmed ? DIM_ALPHA : 1
 
-  if (!node.fringe) {
-    ctx.shadowColor = node.seed ? colors.lumen : colors.lumenDim
-    ctx.shadowBlur = node.seed ? 22 : 10
+  if (node.kind === 'entity') paintHub(node, ctx, scale, r, colors)
+  else paintEvent(node, ctx, scale, r, colors)
+
+  ctx.restore()
+}
+
+function paintHub(
+  node: PaintHubNode,
+  ctx: CanvasRenderingContext2D,
+  scale: number,
+  r: number,
+  colors: Palette,
+): void {
+  const { x = 0, y = 0 } = node
+
+  // The shipped Observatory glow, scaled by degree. Designing a *new* light
+  // treatment is U9's brief (R13) — this only decides how much of the existing
+  // one a given hub gets.
+  if (!node.dimmed) {
+    ctx.shadowColor = colors.lumen
+    ctx.shadowBlur = Math.min(24, 6 + node.degree)
   }
-  ctx.globalAlpha = node.fringe ? 0.55 : 1
   ctx.beginPath()
   ctx.arc(x, y, r, 0, Math.PI * 2)
-  ctx.fillStyle = color
+  ctx.fillStyle = colors.lumenBright
   ctx.fill()
   ctx.shadowBlur = 0
-  ctx.globalAlpha = 1
+
+  if (node.pinned) {
+    ctx.beginPath()
+    ctx.arc(x, y, r + 4, 0, Math.PI * 2)
+    ctx.strokeStyle = colors.lumenBright
+    ctx.lineWidth = 1.2
+    ctx.setLineDash([2, 2])
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
+
+  if (node.dimmed || scale < hubLabelZoom(node.degree)) return
+
+  const size = Math.max(8.5, (9 + Math.sqrt(node.degree)) / scale)
+  ctx.font = `${size}px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  ctx.fillStyle = colors.ink
+  ctx.fillText(truncate(node.label, 34), x, y + r + 3)
+}
+
+function paintEvent(
+  node: PaintEventNode,
+  ctx: CanvasRenderingContext2D,
+  scale: number,
+  r: number,
+  colors: Palette,
+): void {
+  const { x = 0, y = 0 } = node
+  const cancelled = node.states.includes('cancelled')
+
+  // Fringe dots recede by losing the glow and half their opacity — never by
+  // being dropped. R5 is explicit that they stay hoverable.
+  if (!node.fringe && !node.dimmed) {
+    ctx.shadowColor = colors.lumenDim
+    ctx.shadowBlur = 8
+  }
+  if (node.fringe) ctx.globalAlpha *= FRINGE_ALPHA
+
+  ctx.beginPath()
+  ctx.arc(x, y, r, 0, Math.PI * 2)
+  ctx.fillStyle = cancelled ? colors.cancelled : node.fringe ? colors.fringe : colors.inkDim
+  ctx.fill()
+  ctx.shadowBlur = 0
 
   // The user's own mark sits outside the node so it survives every lens.
   if (node.starred) {
     ctx.beginPath()
-    ctx.arc(x, y, r + 3, 0, Math.PI * 2)
+    ctx.arc(x, y, r + 2.5, 0, Math.PI * 2)
     ctx.strokeStyle = colors.star
-    ctx.lineWidth = 1.4
+    ctx.lineWidth = 1.2
     ctx.stroke()
   }
 
-  if (node.selected) {
+  if (node.pinned) {
     ctx.beginPath()
-    ctx.arc(x, y, r + 6.5, 0, Math.PI * 2)
+    ctx.arc(x, y, r + 5.5, 0, Math.PI * 2)
     ctx.strokeStyle = colors.lumenBright
     ctx.lineWidth = 0.8
     ctx.setLineDash([2, 2])
@@ -122,68 +239,59 @@ export function paintNode(node: PaintNode, ctx: CanvasRenderingContext2D, scale:
     ctx.setLineDash([])
   }
 
-  if (node.states.includes('cancelled')) {
+  if (cancelled) {
     // Struck through, the same gesture the list row uses.
     ctx.beginPath()
-    ctx.moveTo(x - r - 3, y + r + 3)
-    ctx.lineTo(x + r + 3, y - r - 3)
+    ctx.moveTo(x - r - 2.5, y + r + 2.5)
+    ctx.lineTo(x + r + 2.5, y - r - 2.5)
     ctx.strokeStyle = colors.cancelled
-    ctx.lineWidth = 1.4
+    ctx.lineWidth = 1.2
     ctx.stroke()
   } else if (node.states.includes('moved') || node.states.includes('updated')) {
-    ctx.beginPath()
-    ctx.arc(x + r + 2, y - r - 2, 2, 0, Math.PI * 2)
-    ctx.fillStyle = colors.moved
-    ctx.fill()
+    changeDot(ctx, x + r + 2, y - r - 2, colors.moved)
   } else if (node.states.includes('new')) {
-    ctx.beginPath()
-    ctx.arc(x + r + 2, y - r - 2, 2, 0, Math.PI * 2)
-    ctx.fillStyle = colors.new
-    ctx.fill()
+    changeDot(ctx, x + r + 2, y - r - 2, colors.new)
   }
 
-  // Labels appear as you zoom in, and always on the seed. A constellation at
-  // low zoom is shapes; reading it is what zooming is for.
-  if (node.seed || scale > 1.6) {
-    const size = Math.max(9, 11 / scale)
-    ctx.font = `${size}px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'top'
-    ctx.fillStyle = node.seed ? colors.ink : colors.inkDim
-    ctx.fillText(truncate(node.title, node.seed ? 42 : 28), x, y + r + 4)
-  }
+  if (node.dimmed || scale < EVENT_LABEL_ZOOM) return
 
-  ctx.restore()
+  const size = Math.max(8, 10 / scale)
+  ctx.font = `${size}px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  ctx.fillStyle = colors.fringe
+  ctx.fillText(truncate(node.title, 26), x, y + r + 3)
+}
+
+function changeDot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+  ctx.beginPath()
+  ctx.arc(x, y, 1.8, 0, Math.PI * 2)
+  ctx.fillStyle = color
+  ctx.fill()
 }
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`
 }
 
-export interface PaintLink {
-  strength: number
-  hovered: boolean
-  inspected: boolean
-}
-
-/** Stronger edges are brighter and thicker: a shared co-panelist should look
- *  like more than a shared genre, because it is. */
-export function linkColor(link: PaintLink): string {
+/**
+ * Links carry no weight of their own here — one event-entity pair is one fact,
+ * and the hub's size already says how many of them it collects. So a link is
+ * either part of the neighbourhood under the cursor or it is background.
+ */
+export function linkColor(active: boolean, dimmed: boolean): string {
   const colors = palette()
-  if (link.inspected) return colors.lumenBright
-  if (link.hovered) return colors.lumen
-  const alpha = Math.min(0.5, 0.12 + link.strength * 0.5)
-  return withAlpha(colors.lumenDim, alpha)
+  if (dimmed) return withAlpha(colors.lumenDim, 0.04)
+  return active ? withAlpha(colors.lumen, 0.75) : withAlpha(colors.lumenDim, 0.16)
 }
 
-export function linkWidth(link: PaintLink): number {
-  if (link.inspected) return 2.2
-  return Math.min(1.8, 0.5 + link.strength * 1.5)
+export function linkWidth(active: boolean): number {
+  return active ? 1.4 : 0.5
 }
 
 /** The tokens are hex; canvas needs an alpha channel, and appending one is
  *  cheaper than duplicating every colour as an rgb triple in the theme. */
-function withAlpha(hex: string, alpha: number): string {
+export function withAlpha(hex: string, alpha: number): string {
   const clean = hex.replace('#', '')
   if (clean.length !== 6) return hex
   const byte = Math.round(Math.max(0, Math.min(1, alpha)) * 255)

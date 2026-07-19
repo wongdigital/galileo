@@ -1,10 +1,11 @@
 /**
  * The lens control.
  *
- * Each lens carries a live count of the seed's neighbours under it, which is
- * what turns a dead end into a route: a seed with no franchise connections
- * shows "IP 0 · People 4" and the way out is the next button along, not a
- * back-and-forth guess.
+ * The per-lens count column is optional and currently unused: the entity map
+ * answers "this lens has nothing for you" with the all-fringe overlay, which can
+ * quote hub counts for the whole scope rather than for one seed. The prop stays
+ * because a count beside each lens is still the right shape for that hint if it
+ * ever moves back up here.
  */
 
 import type { LensId } from '@shared/graph'
@@ -23,11 +24,11 @@ interface LensSelectorProps {
   lenses: readonly LensId[]
   active: LensId
   onSelect: (lens: LensId) => void
-  /** Seed degree per lens. Empty when nothing is seeded. */
-  degrees: { lens: LensId; degree: number }[]
+  /** Optional count per lens, shown beside its label. */
+  degrees?: { lens: LensId; degree: number }[]
 }
 
-export function LensSelector({ lenses, active, onSelect, degrees }: LensSelectorProps) {
+export function LensSelector({ lenses, active, onSelect, degrees = [] }: LensSelectorProps) {
   const degreeFor = (lens: LensId): number | null =>
     degrees.find((d) => d.lens === lens)?.degree ?? null
 

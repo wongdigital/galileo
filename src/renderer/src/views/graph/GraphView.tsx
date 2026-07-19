@@ -1,64 +1,98 @@
 /**
- * The Relatedness Graph (U6) — the discovery surface.
+ * The Entity Map — the discovery surface.
  *
- * Everything on screen comes off the same spine the 5-day view reads, so a star
- * set here is starred there before the user has finished switching (R10), and a
- * cancelled starred event carries the same two marks in both places (AE4).
+ * Events are dots, entities are hubs, and one link joins each event to each
+ * entity it carries. Everything on screen comes off the same spine the 5-day
+ * view reads, so a star set here is starred there before the user has finished
+ * switching (R10), and a cancelled starred event carries the same two marks in
+ * both places.
  *
- * ## Force tuning, and one thing the plan asked for that the library will not do
+ * ## The filter is the scope, and it is the only scope
  *
- * The plan specifies `d3ReheatSimulation()` at alpha ~0.4 rather than 1.0.
- * force-graph does not expose that: `d3ReheatSimulation()` is hard-coded to
- * `alpha(1)`, and any `graphData` change internally runs `stop().alpha(1)`
- * regardless. There is no public alpha setter. So the intent — a nudge, not a
- * re-anneal — is expressed the way the library does allow: `d3AlphaMin` stops
- * the simulation once alpha decays past a threshold, turning a full settle into
- * a bounded one, and object constancy means the nodes are re-annealing *from
- * where they already are* rather than from nothing. The visible result is what
- * alpha 0.4 was asking for; the mechanism is a floor rather than a ceiling.
+ * There is no seed, no expand/collapse, and no graph-local scope control (R2).
+ * What the filter holds is what the map draws. That is what removed the seed
+ * prompt: the map always has something to show, so it mounts straight to a
+ * picture rather than to a question.
+ *
+ * ## One pin at a time, and hover is a preview of it
+ *
+ * "Card open = pinned" is the single rule. Pinning a hub clears `selectedUid`;
+ * selecting an event clears the hub pin. Hovering anything temporarily previews
+ * that neighbourhood and reverts on mouse-out, which keeps the
+ * pin-one-hub-then-compare-its-neighbours loop alive without introducing a mode
+ * (R6, R7).
+ *
+ * A `selectedUid` arriving from the list opens here as a full pin — dimming and
+ * all — never as a card floating over an undimmed map.
+ *
+ * ## Two things the layout does that are not obvious
+ *
+ * **The halo** (R5) is a weak radial force scoped to fringe nodes rather than a
+ * ring of pinned positions. Pinning would fight the simulation and hard-code a
+ * radius; a force lets the core push outward naturally and leaves fringe dots as
+ * hoverable as everything else. `forceRadial` is not re-exported by
+ * react-force-graph-2d, which is why `d3-force` is a direct dependency.
+ *
+ * **The re-fit runs on engine stop, not on a timer.** The shipped ego view used
+ * fixed 420ms/650ms delays, which worked at 60 nodes and do not at 4,000: at map
+ * scale the settle outlasts any fixed delay, and fitting early frames a shape
+ * still flying apart. It is also armed only by a *scope* change — a lens switch
+ * swaps hubs and must not re-frame, because the reorganization is the thing the
+ * user is watching (R3).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
+import { forceRadial } from 'd3-force'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
-import { SEED_CAP, useGraph } from '@renderer/state/useGraph'
-import { LENSES, type GraphLink, type LensId } from '@shared/graph'
-import { StarButton } from '@renderer/views/schedule/StarButton'
-import { EdgeInspector } from './EdgeInspector'
-import { LENS_HINT, LENS_LABEL, LensSelector } from './LensSelector'
-import { SeedPrompt } from './SeedPrompt'
-import { BipartiteSpike } from './BipartiteSpike'
-import { linkColor, linkWidth, paintNode } from './paint'
+import { useEntityMap } from '@renderer/state/useEntityMap'
+import { EventCard } from '@renderer/components/EventCard'
+import { EntityCard } from '@renderer/components/EntityCard'
+import { valueLabel } from '@renderer/sidebar/labels'
+import {
+  LENSES,
+  MIN_ENTITY_DEGREE,
+  eventNodeId,
+  type GraphEntity,
+  type LensId,
+  type LensIndex,
+} from '@shared/graph'
+import { LENS_LABEL, LensSelector } from './LensSelector'
+import { linkColor, linkWidth, nodeRadius, paintMapNode } from './paint'
 import { useNodeCache, type GraphLinkObject, type GraphNodeObject } from './useNodeCache'
 
-/** Stop the settle early rather than running it to convergence — see above. */
+/** Stop the settle early rather than running it to convergence. Object
+ *  constancy means nodes re-anneal from where they already are, so a bounded
+ *  settle reads as a nudge rather than a re-entry. */
 const ALPHA_MIN = 0.12
 const VELOCITY_DECAY = 0.35
 
 /**
- * Ceiling on the post-fit zoom. A one-node neighbourhood has a zero-area
- * bounding box, and fitting that to the viewport magnifies a single dot into a
- * full-pane disc. Roughly "one node reads as a node, not as the background".
+ * Ceiling on the post-fit zoom. A two-node scope has a near-zero-area bounding
+ * box, and fitting that to the viewport magnifies a pair of dots into full-pane
+ * discs. Roughly "one node reads as a node, not as the background".
  */
 const MAX_ZOOM = 2.5
 
-/** Spike (task #9). `entities` swaps in the bipartite prototype; the toggle is
- *  here rather than behind an env flag so it can be compared side by side. */
-type GraphMode = 'ego' | 'entities'
+/** Beyond this the corpus stops being a picture and starts being a texture, so
+ *  charge and link distance both tighten. The split is the spike's, measured. */
+const DENSE_NODE_COUNT = 900
+
+/** Weak enough that the core still pushes the halo outward rather than the halo
+ *  compressing the core. R5 asks for presence, not a perfect ring. */
+const HALO_STRENGTH = 0.35
 
 /**
  * Measures the canvas host, and attaches to it via a **callback ref** rather
  * than a `useRef` object.
  *
- * The distinction is load-bearing. This component early-returns the seed prompt
- * when nothing is seeded, so the canvas element does not exist on first mount.
- * An effect keyed on a ref object would run once, find `ref.current === null`,
- * bail, and never run again — the ref's identity never changes, so seeding
- * later mounts the canvas with no observer watching it. Size stays 0, the
- * `size.width > 0` guard below keeps the graph unmounted, and you get a blank
- * pane that reports "showing 24 of 65" because the data layer was right all
- * along.
+ * The distinction is load-bearing, and it is the reason a regression test exists
+ * for it: any render path that mounts the canvas *after* first paint would, with
+ * a ref object, run its size effect once against `null` and never again — the
+ * ref's identity never changes. Size stays 0, the `size.width > 0` guard keeps
+ * the graph unmounted, and you get a blank pane while the data layer cheerfully
+ * reports the right counts.
  *
  * A callback ref is state, so mounting the element re-runs the effect.
  */
@@ -84,197 +118,242 @@ function useSize(): [(element: HTMLDivElement | null) => void, { width: number; 
   return [setElement, size]
 }
 
-export function GraphView() {
-  const { lens, setLens, seed, setSeed, selectedUid, setSelectedUid, toggleStar } = useSpine()
-  const schedule = useSchedule()
-  const graph = useGraph()
+/** Genre entities carry machine ids, and the sidebar already owns the table that
+ *  renders `scifi-fantasy` as "Sci-Fi & Fantasy". People and franchises arrive
+ *  as prose and are shown as extracted. */
+function entityLabel(entity: GraphEntity): string {
+  return entity.lens === 'facets' ? valueLabel('genre', entity.id.replace(/^genre:/, '')) : entity.label
+}
 
-  const shellRef = useRef<HTMLDivElement>(null)
+/** How many hubs a lens *would* draw over this scope. Cheap over the already
+ *  built indexes, and the replacement for the ego view's per-seed degree hint. */
+function hubCountFor(index: LensIndex, scope: ReadonlySet<string>): number {
+  let count = 0
+  for (const uids of index.uidsByEntity.values()) {
+    let inScope = 0
+    for (const uid of uids) {
+      if (scope.has(uid)) inScope += 1
+      if (inScope >= MIN_ENTITY_DEGREE) break
+    }
+    if (inScope >= MIN_ENTITY_DEGREE) count += 1
+  }
+  return count
+}
+
+export function GraphView() {
+  const { lens, setLens, selectedUid, setSelectedUid } = useSpine()
+  const schedule = useSchedule()
+  const map = useEntityMap()
+
   const engine = useRef<ForceGraphMethods<GraphNodeObject, GraphLinkObject> | undefined>(undefined)
   const [canvasRef, size] = useSize()
 
-  const [inspected, setInspected] = useState<GraphLink | null>(null)
-  const [hovered, setHovered] = useState<GraphLink | null>(null)
-  const [mode, setMode] = useState<GraphMode>('ego')
+  /** Graph-local: entities are not spine UIDs, and putting them in the spine
+   *  would grow its contract for one view's transient state. */
+  const [pinnedEntity, setPinnedEntity] = useState<string | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
 
-  const { nodes, links, nodesChanged } = useNodeCache(graph.nodes, graph.links)
-
-  const seedFrom = useCallback(
-    (uids: string[], origin: 'selection' | 'stars' | 'filter') => {
-      setSeed({ uids, lens, hops: 1, origin })
-      if (uids.length === 1 && uids[0]) setSelectedUid(uids[0])
-      setInspected(null)
-    },
-    [lens, setSeed, setSelectedUid],
-  )
-
-  // Arriving from the 5-day view with a row selected seeds from it. Toggling
-  // views should land on the thing you were looking at, not on a prompt asking
-  // you to pick it again.
-  useEffect(() => {
-    if (!seed && selectedUid && schedule.byUid.has(selectedUid)) {
-      setSeed({ uids: [selectedUid], lens, hops: 1, origin: 'selection' })
-    }
-  }, [seed, selectedUid, schedule.byUid, lens, setSeed])
-
-  // An inspected edge whose link no longer exists — after a lens switch, a
-  // re-seed, or a refresh — must not linger describing a connection that is no
-  // longer on screen.
-  useEffect(() => {
-    if (!inspected) return
-    const key = `${inspected.source}|${inspected.target}`
-    if (!links.some((l) => `${l.source}|${l.target}` === key)) setInspected(null)
-  }, [links, inspected])
-
+  const { nodes, links, nodesChanged } = useNodeCache(map.nodes, map.links)
   const graphData = useMemo(() => ({ nodes, links }), [nodes, links])
 
-  // Re-fit only when the node set changed. A lens switch keeps the same nodes,
-  // and re-fitting on every switch would fight the reorganization the user is
-  // watching.
-  //
-  // The clamp matters more than it looks. `zoomToFit` scales the bounding box of
-  // the nodes to the viewport, and a lone seed's bounding box is one dot — so a
-  // zero-edge seed, which is a routine outcome under a narrow filter, gets
-  // magnified until a single node fills the pane as a featureless disc. Fit,
-  // then pull back to something a human would recognise as a graph.
-  useEffect(() => {
-    if (!nodesChanged || nodes.length === 0) return
-    const id = window.setTimeout(() => {
-      const view = engine.current
-      if (!view) return
-      view.zoomToFit(600, 90)
-      // Applied after the fit animation, otherwise the fit overwrites it.
-      window.setTimeout(() => {
-        const current = view.zoom()
-        if (current > MAX_ZOOM) view.zoom(MAX_ZOOM, 300)
-      }, 650)
-    }, 420)
-    return () => window.clearTimeout(id)
-  }, [nodesChanged, nodes.length])
+  const hubsById = useMemo(() => new Map(map.hubs.map((h) => [h.id, h])), [map.hubs])
 
-  const titleFor = useCallback(
-    (uid: string) => schedule.byUid.get(uid)?.title ?? uid,
-    [schedule.byUid],
+  // A hub that vanished under the new lens cannot keep a card open describing
+  // it. Hubs swap wholesale on a lens switch (R3), so this fires routinely.
+  useEffect(() => {
+    if (pinnedEntity && !hubsById.has(pinnedEntity)) setPinnedEntity(null)
+  }, [pinnedEntity, hubsById])
+
+  const pinEntity = useCallback(
+    (id: string) => {
+      setPinnedEntity(id)
+      // Mutual exclusion: one card at a time.
+      setSelectedUid(null)
+    },
+    [setSelectedUid],
   )
 
-  const seedEvent = seed?.uids.length === 1 ? schedule.byUid.get(seed.uids[0]!) : null
-  // From the graph's own node model rather than the list's rows: the list only
-  // builds the active day, and the seed is very often not on it.
-  const seedStarred = seedEvent
-    ? (graph.nodes.find((n) => n.uid === seedEvent.uid)?.starred ?? false)
-    : false
+  const pinEvent = useCallback(
+    (uid: string) => {
+      setSelectedUid(uid)
+      setPinnedEntity(null)
+    },
+    [setSelectedUid],
+  )
 
-  if (!graph.ready) {
+  const dismiss = useCallback(() => {
+    setPinnedEntity(null)
+    setSelectedUid(null)
+  }, [setSelectedUid])
+
+  const pinnedNodeId = pinnedEntity ?? (selectedUid ? eventNodeId(selectedUid) : null)
+
+  const adjacency = useMemo(() => {
+    const out = new Map<string, Set<string>>()
+    const add = (a: string, b: string): void => {
+      const bucket = out.get(a)
+      if (bucket) bucket.add(b)
+      else out.set(a, new Set([b]))
+    }
+    for (const link of map.links) {
+      add(link.source, link.target)
+      add(link.target, link.source)
+    }
+    return out
+  }, [map.links])
+
+  // Hover overrides the pin and reverts on mouse-out — the comparison loop.
+  const focused = hovered ?? pinnedNodeId
+  const lit = useMemo(() => {
+    if (!focused) return null
+    return new Set([focused, ...(adjacency.get(focused) ?? [])])
+  }, [focused, adjacency])
+
+  const memberUids = useMemo(() => {
+    if (!pinnedEntity) return []
+    const out: string[] = []
+    for (const link of map.links) {
+      if (link.target === pinnedEntity) out.push(link.source.replace(/^event:/, ''))
+    }
+    return out
+  }, [pinnedEntity, map.links])
+
+  /**
+   * The armed re-fit. `nodesChanged` is true only when the *event* population
+   * moved, so a lens switch never arms it.
+   */
+  const refitArmed = useRef(false)
+  useEffect(() => {
+    if (nodesChanged) refitArmed.current = true
+  }, [nodesChanged])
+
+  const handleEngineStop = useCallback(() => {
+    if (!refitArmed.current) return
+    refitArmed.current = false
+    const view = engine.current
+    if (!view || nodes.length === 0) return
+    view.zoomToFit(600, 90)
+    // Applied after the fit animation, otherwise the fit overwrites it.
+    window.setTimeout(() => {
+      if (view.zoom() > MAX_ZOOM) view.zoom(MAX_ZOOM, 300)
+    }, 650)
+  }, [nodes.length])
+
+  // Forces are re-tuned whenever the drawn set changes: charge has to weaken as
+  // the node count climbs or a 4,000-node map flies apart faster than the
+  // viewport can follow, and the halo has to learn the current fringe.
+  useEffect(() => {
+    const view = engine.current
+    if (!view) return
+    const dense = nodes.length > DENSE_NODE_COUNT
+    view.d3Force('charge')?.strength(dense ? -14 : -40)
+    view.d3Force('link')?.distance(dense ? 14 : 26)
+
+    // Radius grows with the core so the halo clears it at every scale rather
+    // than being swallowed by a large map or flung away from a small one.
+    const radius = 140 + Math.sqrt(nodes.length) * 9
+    view.d3Force(
+      'halo',
+      forceRadial<GraphNodeObject>(radius, 0, 0).strength((node) =>
+        node.model.kind === 'event' && node.model.fringe ? HALO_STRENGTH : 0,
+      ),
+    )
+  }, [nodes, graphData])
+
+  const paint = useCallback(
+    (node: GraphNodeObject, ctx: CanvasRenderingContext2D, scale: number) => {
+      const dimmed = lit ? !lit.has(node.id) : false
+      const pinned = node.id === pinnedNodeId
+      const model = node.model
+      if (model.kind === 'entity') {
+        paintMapNode(
+          { kind: 'entity', x: node.x, y: node.y, label: entityLabel(model.entity), degree: model.degree, pinned, dimmed },
+          ctx,
+          scale,
+        )
+      } else {
+        paintMapNode(
+          {
+            kind: 'event',
+            x: node.x,
+            y: node.y,
+            title: model.title,
+            fringe: model.fringe,
+            starred: model.starred,
+            states: model.states,
+            pinned,
+            dimmed,
+          },
+          ctx,
+          scale,
+        )
+      }
+    },
+    [lit, pinnedNodeId],
+  )
+
+  const nodeTooltip = useCallback((node: GraphNodeObject) => {
+    const model = node.model
+    return model.kind === 'entity'
+      ? `${entityLabel(model.entity)} · ${model.degree} events`
+      : `${model.time} · ${model.title}`
+  }, [])
+
+  const onNodeClick = useCallback(
+    (node: GraphNodeObject) => {
+      if (node.model.kind === 'entity') pinEntity(node.id)
+      else pinEvent(node.model.uid)
+    },
+    [pinEntity, pinEvent],
+  )
+
+  // Which lenses would draw hubs over this same scope — the all-fringe state's
+  // way out, and the replacement for the deleted per-seed degree hint.
+  const scopeSet = useMemo(() => new Set(map.scopeUids), [map.scopeUids])
+  const lensesWithHubs = useMemo(() => {
+    if (map.hubCount > 0 || map.events.length === 0) return []
+    return [...map.indexes.entries()]
+      .filter(([id]) => id !== lens)
+      .map(([id, index]) => ({ lens: id, hubs: hubCountFor(index, scopeSet) }))
+      .filter((entry) => entry.hubs > 0)
+      .sort((a, b) => b.hubs - a.hubs)
+  }, [map.hubCount, map.events.length, map.indexes, lens, scopeSet])
+
+  if (!map.ready) {
     return <Centered>Loading the schedule…</Centered>
   }
 
-  if (mode === 'entities') {
-    return (
-      <div ref={shellRef} className="flex min-h-0 flex-1 flex-col">
-        <Toolbar lens={lens} setLens={setLens} degrees={[]} mode={mode} setMode={setMode} right={null} />
-        <BipartiteSpike />
-      </div>
-    )
-  }
-
-  if (!seed || graph.nodes.length === 0) {
-    return (
-      <div ref={shellRef} className="flex min-h-0 flex-1 flex-col">
-        <Toolbar
-          lens={lens}
-          setLens={setLens}
-          degrees={[]}
-          mode={mode}
-          setMode={setMode}
-          right={<span className="text-[11px] text-ink-fringe">nothing seeded</span>}
-        />
-        <SeedPrompt
-          candidates={graph.candidates}
-          filteredCount={schedule.filteredCount}
-          filterActive={schedule.filterActive}
-          cap={SEED_CAP}
-          onSeedEvent={(uid) => seedFrom([uid], 'selection')}
-          onSeedFilter={() => seedFrom(graph.filteredUids, 'filter')}
-        />
-      </div>
-    )
-  }
-
-  const soloSeed = graph.nodes.length === 1
-  const bestAlternative = [...graph.seedDegrees]
-    .filter((d) => d.lens !== lens && d.degree > 0)
-    .sort((a, b) => b.degree - a.degree)[0]
+  const pinnedHub = pinnedEntity ? hubsById.get(pinnedEntity) : undefined
 
   return (
-    <div ref={shellRef} className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <Toolbar
         lens={lens}
         setLens={setLens}
-        degrees={graph.seedDegrees}
-        mode={mode}
-        setMode={setMode}
         right={
-          <div className="flex items-center gap-2.5">
-            {graph.omitted > 0 ? (
-              <span className="text-[11px] text-ink-faint">
-                showing {graph.nodes.length - seed.uids.length} of{' '}
-                {graph.nodes.length - seed.uids.length + graph.omitted}
-              </span>
-            ) : null}
-            {seed.hops === 1 ? (
-              <button
-                type="button"
-                onClick={() => setSeed({ ...seed, hops: 2 })}
-                className="rounded-md border border-line px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors hover:border-line-strong hover:text-ink"
-              >
-                Expand
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setSeed({ ...seed, hops: 1 })}
-                className="rounded-md border border-line-strong px-2.5 py-1 text-[11.5px] text-ink transition-colors hover:text-ink-bright"
-              >
-                Collapse
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setSeed(null)
-                setInspected(null)
-              }}
-              className="rounded-md px-2 py-1 text-[11.5px] text-ink-faint transition-colors hover:text-ink-dim"
+          map.events.length > 0 ? (
+            <span
+              data-testid="map-counts"
+              className="font-mono text-[11px] text-ink-faint tabular-nums"
             >
-              Clear
-            </button>
-          </div>
+              {`${plural(map.hubCount, 'hub')} · ${plural(map.events.length, 'event')}${
+                map.fringeCount > 0 ? ` · ${map.fringeCount.toLocaleString()} unconnected` : ''
+              }`}
+            </span>
+          ) : null
         }
       />
 
-      {seedEvent ? (
-        <div className="flex shrink-0 items-center gap-2.5 border-b border-line-soft px-4 py-2">
-          <StarButton
-            starred={seedStarred}
-            onToggle={() => void toggleStar(seedEvent)}
-            label={seedEvent.title}
-          />
-          <span className="truncate text-[12.5px] text-ink-bright">{seedEvent.title}</span>
-          <span className="shrink-0 text-[11px] text-ink-faint">
-            {seedEvent.room || 'Room TBA'}
-          </span>
-        </div>
-      ) : (
-        <div className="shrink-0 border-b border-line-soft px-4 py-2 text-[11.5px] text-ink-dim">
-          {seed.uids.length} seeded events
-          {graph.seedTruncated
-            ? ` — capped from ${graph.seedTruncated.requested.toLocaleString()}`
-            : ''}
-        </div>
-      )}
-
       <div ref={canvasRef} className="relative min-h-0 flex-1">
-        {size.width > 0 ? (
+        {map.events.length === 0 ? (
+          <Centered>
+            {schedule.filterActive
+              ? 'No events match the current filter — the map draws whatever the filter holds.'
+              : 'No events to map yet.'}
+          </Centered>
+        ) : null}
+
+        {size.width > 0 && map.events.length > 0 ? (
           <ForceGraph2D<GraphNodeObject, GraphLinkObject>
             ref={engine}
             width={size.width}
@@ -283,78 +362,68 @@ export function GraphView() {
             backgroundColor="rgba(0,0,0,0)"
             d3AlphaMin={ALPHA_MIN}
             d3VelocityDecay={VELOCITY_DECAY}
+            cooldownTime={8000}
             nodeRelSize={4}
             enableNodeDrag={false}
-            nodeLabel={(node) => `${node.model.time} · ${node.model.title}`}
-            nodeCanvasObject={(node, ctx, scale) =>
-              paintNode(
-                { ...node.model, x: node.x, y: node.y, selected: node.id === selectedUid },
-                ctx,
-                scale,
-              )
-            }
+            nodeLabel={nodeTooltip}
+            nodeCanvasObject={paint}
             nodePointerAreaPaint={(node, color, ctx) => {
               if (node.x === undefined || node.y === undefined) return
+              // Hit area tracks the drawn radius so a big hub is as easy to hit
+              // as it looks, with a floor that keeps 2px event dots clickable.
+              const r = Math.max(6, nodeRadius(node.model) + 3)
               ctx.fillStyle = color
               ctx.beginPath()
-              ctx.arc(node.x, node.y, 9, 0, Math.PI * 2)
+              ctx.arc(node.x, node.y, r, 0, Math.PI * 2)
               ctx.fill()
             }}
-            linkColor={(link) =>
-              linkColor({
-                strength: link.link.strength,
-                hovered: link.link === hovered,
-                inspected: link.link === inspected,
-              })
-            }
+            linkColor={(link) => {
+              const active = lit ? lit.has(idOf(link.source)) && lit.has(idOf(link.target)) : false
+              return linkColor(active, lit ? !active : false)
+            }}
             linkWidth={(link) =>
-              linkWidth({
-                strength: link.link.strength,
-                hovered: link.link === hovered,
-                inspected: link.link === inspected,
-              })
+              linkWidth(lit ? lit.has(idOf(link.source)) && lit.has(idOf(link.target)) : false)
             }
-            linkHoverPrecision={6}
-            onNodeClick={(node) => seedFrom([node.id], 'selection')}
-            onLinkClick={(link) => setInspected((current) => (current === link.link ? null : link.link))}
-            onLinkHover={(link) => setHovered(link?.link ?? null)}
-            onBackgroundClick={() => setInspected(null)}
+            onNodeHover={(node) => setHovered(node?.id ?? null)}
+            onNodeClick={onNodeClick}
+            onBackgroundClick={dismiss}
+            onEngineStop={handleEngineStop}
           />
         ) : null}
 
-        {soloSeed ? (
+        {lensesWithHubs.length > 0 ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-8 flex justify-center">
-            <div className="pointer-events-auto max-w-[380px] rounded-lg border border-line bg-ground-850/95 px-3.5 py-2.5 text-center text-[12px] leading-relaxed text-ink-dim backdrop-blur">
-              No {LENS_LABEL(lens)} connections — nothing else here {LENS_HINT(lens)}.
-              {bestAlternative ? (
-                <>
-                  {' '}
+            <div className="pointer-events-auto max-w-[420px] rounded-lg border border-line bg-ground-850/95 px-3.5 py-2.5 text-center text-[12px] leading-relaxed text-ink-dim backdrop-blur">
+              No {LENS_LABEL(lens)} hubs here — nothing in this scope shares one.{' '}
+              {lensesWithHubs.slice(0, 2).map((entry, i) => (
+                <span key={entry.lens}>
+                  {i > 0 ? ', ' : ''}
                   <button
                     type="button"
-                    onClick={() => setLens(bestAlternative.lens)}
+                    onClick={() => setLens(entry.lens)}
                     className="text-lumen underline-offset-2 hover:underline"
                   >
-                    {LENS_LABEL(bestAlternative.lens)} has {bestAlternative.degree}
+                    {LENS_LABEL(entry.lens)} has {entry.hubs}
                   </button>
-                  .
-                </>
-              ) : (
-                ' No other lens connects it either.'
-              )}
+                </span>
+              ))}
+              .
             </div>
           </div>
         ) : null}
 
-        {inspected ? (
-          <EdgeInspector
-            link={inspected}
-            sourceTitle={titleFor(inspected.source)}
-            targetTitle={titleFor(inspected.target)}
-            onDismiss={() => setInspected(null)}
+        {pinnedHub ? (
+          <EntityCard
+            label={entityLabel(pinnedHub.entity)}
+            memberUids={memberUids}
+            onSelectEvent={pinEvent}
+            onDismiss={dismiss}
           />
+        ) : selectedUid ? (
+          <EventCard uid={selectedUid} onDismiss={dismiss} />
         ) : null}
 
-        {!graph.indexReady ? (
+        {!map.indexReady ? (
           <span className="absolute top-3 left-4 font-mono text-[10px] text-ink-fringe">
             loading people and franchises…
           </span>
@@ -364,55 +433,37 @@ export function GraphView() {
   )
 }
 
+/** force-graph rewrites link endpoints from ids into node references once the
+ *  simulation has run, so both shapes have to be handled on every read. */
+function idOf(end: string | GraphNodeObject): string {
+  return typeof end === 'string' ? end : end.id
+}
+
+function plural(count: number, noun: string): string {
+  return `${count.toLocaleString()} ${noun}${count === 1 ? '' : 's'}`
+}
+
 function Toolbar({
   lens,
   setLens,
-  degrees,
-  mode,
-  setMode,
   right,
 }: {
   lens: LensId
   setLens: (lens: LensId) => void
-  degrees: { lens: LensId; degree: number }[]
-  mode: GraphMode
-  setMode: (mode: GraphMode) => void
   right: React.ReactNode
 }) {
   return (
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-      <div className="flex items-center gap-3">
-        <LensSelector lenses={LENSES} active={lens} onSelect={setLens} degrees={degrees} />
-        <ModeToggle mode={mode} setMode={setMode} />
-      </div>
+      <LensSelector lenses={LENSES} active={lens} onSelect={setLens} />
       {right}
-    </div>
-  )
-}
-
-/** Spike affordance (task #9); goes away when the model is settled. */
-function ModeToggle({ mode, setMode }: { mode: GraphMode; setMode: (mode: GraphMode) => void }) {
-  return (
-    <div className="flex items-center gap-px rounded-md border border-line bg-ground-850 p-px">
-      {(['ego', 'entities'] as const).map((id) => (
-        <button
-          key={id}
-          type="button"
-          onClick={() => setMode(id)}
-          className={[
-            'rounded-[5px] px-2 py-1 text-[11px] transition-colors',
-            mode === id ? 'bg-ground-700 text-ink-bright' : 'text-ink-faint hover:text-ink',
-          ].join(' ')}
-        >
-          {id === 'ego' ? 'Ego' : 'Entities'}
-        </button>
-      ))}
     </div>
   )
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-1 items-center justify-center text-[12px] text-ink-faint">{children}</div>
+    <div className="flex flex-1 items-center justify-center px-8 text-center text-[12px] text-ink-faint">
+      {children}
+    </div>
   )
 }

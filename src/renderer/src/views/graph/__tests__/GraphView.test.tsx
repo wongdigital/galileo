@@ -1,29 +1,59 @@
 // @vitest-environment jsdom
 
 /**
- * A smoke render of the view itself, with the canvas stubbed.
+ * A smoke render of the map, with the canvas stubbed.
  *
- * The force canvas is feel-tested, not asserted — but everything around it is
+ * The force layout is feel-tested, not asserted — but the chrome around it is
  * ordinary React that can break in ordinary ways, and "the graph tab throws" is
- * not something to discover at the con. So: does it mount, does the no-seed
- * prompt appear instead of an empty canvas, does clicking a candidate seed it,
- * and does the zero-edge hint name a lens that actually has edges.
+ * not something to discover at the con. So what is asserted here is the
+ * interaction *contract*: what mounts, what pins, what dismisses, and that only
+ * ever one card is open.
+ *
+ * The stub renders one button per node and one for the background, which is
+ * enough to drive `onNodeClick` / `onBackgroundClick` without a canvas. It is
+ * deliberately not a fake force layout: nothing here should depend on positions.
  */
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SpineProvider } from '@renderer/state/spine'
+import { SpineProvider, useSpine } from '@renderer/state/spine'
 import { GraphView } from '../GraphView'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 
 const { HASH_OF_EMPTY } = vi.hoisted(() => ({ HASH_OF_EMPTY: 'e3b0c44298fc1c14' }))
 
-// force-graph draws to a real canvas and reads layout boxes; neither exists
-// here, and neither is what this test is about.
 vi.mock('react-force-graph-2d', () => ({
-  default: () => <div data-testid="force-canvas" />,
+  default: ({
+    graphData,
+    onNodeClick,
+    onBackgroundClick,
+  }: {
+    graphData: { nodes: { id: string }[] }
+    onNodeClick?: (node: unknown) => void
+    onBackgroundClick?: () => void
+  }) => (
+    <div data-testid="force-canvas">
+      <button type="button" data-testid="background" onClick={() => onBackgroundClick?.()} />
+      {graphData.nodes.map((node) => (
+        <button
+          key={node.id}
+          type="button"
+          data-testid={`node:${node.id}`}
+          onClick={() => onNodeClick?.(node)}
+        />
+      ))}
+    </div>
+  ),
 }))
 
+/**
+ * Asymmetric on purpose, so a lens switch is observable and so one lens has
+ * nothing to join on:
+ *
+ *   IP      — Star Wars covers p1 + p3; p2 is fringe.
+ *   People  — Ada Vance covers p1 + p2; p3 is fringe.
+ *   Offering— every title is distinct, so no hub at all.
+ */
 vi.mock('@data/enrichment.json', () => ({
   default: {
     schema_version: 1,
@@ -40,7 +70,7 @@ vi.mock('@data/enrichment.json', () => ({
         status: 'ok',
         description_hash: HASH_OF_EMPTY,
         people: [{ name: 'Ada Vance', role: 'moderator' }],
-        franchises: [],
+        franchises: [{ surface_text: 'Star Wars', canonical: 'star-wars' }],
       },
       p2: {
         status: 'ok',
@@ -48,10 +78,23 @@ vi.mock('@data/enrichment.json', () => ({
         people: [{ name: 'Ada Vance', role: 'panelist' }],
         franchises: [],
       },
+      p3: {
+        status: 'ok',
+        description_hash: HASH_OF_EMPTY,
+        people: [],
+        franchises: [{ surface_text: 'Star Wars', canonical: 'star-wars' }],
+      },
     },
   },
 }))
 
+/**
+ * Descriptions stay empty on purpose: the enrichment index drops any entry whose
+ * `description_hash` disagrees with the event's current description, so giving a
+ * fixture event prose would silently strip its people and franchises and leave
+ * the map with no hubs at all. What the card does with prose is EventCard's own
+ * test; what matters here is which card is open.
+ */
 function event(uid: string, title: string): ScheduleEvent {
   return {
     uid,
@@ -69,7 +112,12 @@ function event(uid: string, title: string): ScheduleEvent {
   }
 }
 
-const EVENTS = [event('p1', 'Panel One'), event('p2', 'Panel Two')]
+const EVENTS = [event('p1', 'Panel One'), event('p2', 'Panel Two'), event('p3', 'Panel Three')]
+
+/** Cards are identified by their close control rather than their contents —
+ *  titles also appear in entity-card rows and node tooltips. */
+const EVENT_CARD = 'Close event card'
+const ENTITY_CARD = 'Close entity card'
 
 const projection = (): DatasetProjection => ({
   events: EVENTS,
@@ -91,11 +139,8 @@ beforeEach(() => {
 // never registered — without this each test renders into the previous DOM.
 afterEach(cleanup)
 
-/**
- * jsdom has no layout engine and no ResizeObserver, so the canvas host measures
- * 0 and the render guard keeps the graph unmounted. Only the test that asserts
- * the canvas mounts needs this; the rest are about the surrounding chrome.
- */
+/** jsdom has no layout engine and no ResizeObserver, so the canvas host measures
+ *  0 and the render guard keeps the graph unmounted. */
 function sizeTheDom(): void {
   globalThis.ResizeObserver = class {
     constructor(private readonly cb: ResizeObserverCallback) {}
@@ -107,60 +152,156 @@ function sizeTheDom(): void {
   } as unknown as typeof ResizeObserver
 }
 
+/** Exposes the spine so a test can set filter/lens/selection the way the rest of
+ *  the app would, rather than reaching into the view. */
+let spine: ReturnType<typeof useSpine>
+function Probe() {
+  spine = useSpine()
+  return null
+}
+
 const mount = () =>
   render(
     <SpineProvider>
+      <Probe />
       <GraphView />
     </SpineProvider>,
   )
 
-describe('GraphView', () => {
-  it('shows the seed prompt rather than an empty canvas', async () => {
-    mount()
-    expect(await screen.findByText('Start from something')).toBeTruthy()
-    expect(screen.queryByTestId('force-canvas')).toBeNull()
-  })
+const mountSized = async () => {
+  sizeTheDom()
+  const view = mount()
+  await screen.findByTestId('force-canvas')
+  return view
+}
 
-  it('seeds from a candidate and shows the seed with a star control', async () => {
-    mount()
-    fireEvent.click(await screen.findByText('Panel One'))
+describe('GraphView — mounting (AE1)', () => {
+  it('mounts straight to the map, with no seed prompt in the way', async () => {
+    await mountSized()
 
-    await waitFor(() => expect(screen.getByLabelText('Star Panel One')).toBeTruthy())
+    expect(screen.getByTestId('force-canvas')).toBeTruthy()
     expect(screen.queryByText('Start from something')).toBeNull()
   })
 
-  /**
-   * Regression: seeding from the prompt left a permanently blank canvas.
-   *
-   * The canvas host does not exist while the prompt is up, so a size effect
-   * keyed on a ref *object* ran once against `null` and never again — the ref's
-   * identity never changes. Seeding mounted the canvas with nothing measuring
-   * it, width stayed 0, and the render guard held the graph unmounted while the
-   * toolbar cheerfully reported "showing 24 of 65".
-   *
-   * Asserting the prompt disappears is not enough; that passed throughout. The
-   * assertion has to be that the graph *appears*.
-   */
-  it('mounts the canvas after seeding, not just dismisses the prompt', async () => {
-    sizeTheDom()
-    mount()
-    expect(screen.queryByTestId('force-canvas')).toBeNull()
+  it('draws hubs and every in-scope event, fringe included (AE5)', async () => {
+    await mountSized()
 
-    fireEvent.click(await screen.findByText('Panel One'))
-
-    await waitFor(() => expect(screen.getByTestId('force-canvas')).toBeTruthy())
+    // The whole fixture corpus, unfiltered.
+    await waitFor(() => expect(screen.getByTestId('node:ip:star-wars')).toBeTruthy())
+    for (const uid of ['p1', 'p2', 'p3']) {
+      expect(screen.getByTestId(`node:event:${uid}`)).toBeTruthy()
+    }
+    // p2 carries no franchise and is drawn anyway — R5 is presence, not hiding.
+    expect(screen.getByTestId('map-counts').textContent).toBe('1 hub · 3 events · 1 unconnected')
   })
 
-  it('points a zero-edge seed at the lens that does have edges', async () => {
-    mount()
-    // IP is the opening lens and neither fixture event carries a franchise, so
-    // the seed lands alone and the hint has to offer People.
-    fireEvent.click(await screen.findByText('Panel One'))
+  it('says so rather than crashing when the filter matches nothing', async () => {
+    await mountSized()
+    act(() => spine.setFilter({ ...spine.filter, text: 'nothing matches this' }))
 
-    // The people lens only has data once the compiled index resolves, so the
-    // hint upgrades from "no other lens either" to a route out.
-    await waitFor(() =>
-      expect(screen.getByText(/No IP connections/).textContent).toContain('People has 1'),
-    )
+    await waitFor(() => expect(screen.queryByTestId('force-canvas')).toBeNull())
+    expect(screen.getByText(/No events match the current filter/)).toBeTruthy()
+  })
+})
+
+describe('GraphView — pinning (R7, AE3)', () => {
+  it('pins a hub and opens the entity card, then dismisses on background click', async () => {
+    await mountSized()
+    fireEvent.click(await screen.findByTestId('node:ip:star-wars'))
+
+    expect(await screen.findByText('Star Wars')).toBeTruthy()
+    // Its two member events are listed.
+    expect(screen.getByText('Panel One')).toBeTruthy()
+    expect(screen.getByText('Panel Three')).toBeTruthy()
+
+    fireEvent.click(screen.getByTestId('background'))
+
+    await waitFor(() => expect(screen.queryByText('Star Wars')).toBeNull())
+  })
+
+  it('pins an event and opens the event card', async () => {
+    await mountSized()
+    fireEvent.click(await screen.findByTestId('node:event:p1'))
+
+    expect(await screen.findByLabelText(EVENT_CARD)).toBeTruthy()
+    expect(spine.selectedUid).toBe('p1')
+  })
+
+  it('keeps one card at a time — pinning a hub clears the event selection', async () => {
+    await mountSized()
+    fireEvent.click(await screen.findByTestId('node:event:p1'))
+    await screen.findByLabelText(EVENT_CARD)
+
+    fireEvent.click(screen.getByTestId('node:ip:star-wars'))
+
+    await waitFor(() => expect(spine.selectedUid).toBeNull())
+    expect(screen.queryByLabelText(EVENT_CARD)).toBeNull()
+    expect(screen.getByLabelText(ENTITY_CARD)).toBeTruthy()
+  })
+
+  it('opens the event card for a selection that arrived from the list', async () => {
+    await mountSized()
+    act(() => spine.setSelectedUid('p1'))
+
+    expect(await screen.findByLabelText(EVENT_CARD)).toBeTruthy()
+  })
+
+  it('re-pins to an event when a row inside the entity card is clicked', async () => {
+    await mountSized()
+    fireEvent.click(await screen.findByTestId('node:ip:star-wars'))
+    await screen.findByText('Star Wars')
+
+    fireEvent.click(screen.getByLabelText('Panel Three'))
+
+    await waitFor(() => expect(spine.selectedUid).toBe('p3'))
+    expect(screen.queryByLabelText(ENTITY_CARD)).toBeNull()
+    expect(screen.getByLabelText(EVENT_CARD)).toBeTruthy()
+  })
+})
+
+describe('GraphView — lens switching (R3, AE4)', () => {
+  it('dismisses a pinned hub that the new lens does not draw', async () => {
+    await mountSized()
+    fireEvent.click(await screen.findByTestId('node:ip:star-wars'))
+    await screen.findByText('Star Wars')
+
+    // People has no Star Wars hub — Ada Vance is its only one.
+    act(() => spine.setLens('people'))
+
+    await waitFor(() => expect(screen.queryByText('Star Wars')).toBeNull())
+    expect(await screen.findByTestId('node:person:ada vance')).toBeTruthy()
+    // The event dots are untouched by the switch.
+    expect(screen.getByTestId('node:event:p1')).toBeTruthy()
+  })
+})
+
+describe('GraphView — the all-fringe scope', () => {
+  it('names a lens that does have hubs when the current one has none', async () => {
+    await mountSized()
+    await screen.findByTestId('node:ip:star-wars')
+
+    // Every fixture title is distinct, so no offering has a second sitting.
+    act(() => spine.setLens('offering'))
+
+    expect(await screen.findByText(/No Offering hubs here/)).toBeTruthy()
+    // Both other lenses have exactly one hub over this scope.
+    expect(screen.getByText(/IP has 1/)).toBeTruthy()
+    // Still a map, not an empty state — every event is drawn as fringe.
+    expect(screen.getByTestId('node:event:p1')).toBeTruthy()
+  })
+})
+
+describe('GraphView — the filter is the scope (R2)', () => {
+  it('re-derives the map when the filter moves, with no local scope state', async () => {
+    await mountSized()
+    await screen.findByTestId('node:event:p2')
+
+    act(() => spine.setFilter({ ...spine.filter, text: 'Panel One' }))
+
+    await waitFor(() => expect(screen.queryByTestId('node:event:p2')).toBeNull())
+    expect(screen.getByTestId('node:event:p1')).toBeTruthy()
+    // One event left, and nothing shares a franchise with itself.
+    expect(screen.getByTestId('map-counts').textContent).toBe('0 hubs · 1 event · 1 unconnected')
+    expect(screen.queryByTestId('node:ip:star-wars')).toBeNull()
   })
 })
