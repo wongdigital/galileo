@@ -413,6 +413,17 @@ describe('GraphView — re-fitting on scope change', () => {
     expect(engine.fits).toBe(before)
   })
 
+  it('re-frames on demand from the toolbar, no scope change required', async () => {
+    await mountSized()
+    settle()
+    const before = engine.fits
+
+    // Zoomed into a corner with no filter edit coming, Fit all is the way back.
+    fireEvent.click(screen.getByRole('button', { name: 'Fit all' }))
+
+    expect(engine.fits).toBe(before + 1)
+  })
+
   it('caps the fit at MAX_ZOOM before animating, not after', async () => {
     await mountSized()
     settle()

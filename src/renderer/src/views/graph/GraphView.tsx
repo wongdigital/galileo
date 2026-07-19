@@ -43,7 +43,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
-import { forceRadial } from 'd3-force'
+import { forceCollide, forceRadial, forceX, forceY } from 'd3-force'
 import { useSpine } from '@renderer/state/spine'
 import { useEntityMap } from '@renderer/state/useEntityMap'
 import { EventCard } from '@renderer/components/EventCard'
@@ -82,6 +82,27 @@ const DENSE_NODE_COUNT = 900
 /** Weak enough that the core still pushes the halo outward rather than the halo
  *  compressing the core. R5 asks for presence, not a perfect ring. */
 const HALO_STRENGTH = 0.35
+
+/**
+ * Everything gets a faint pull toward the origin. Without it, a self-contained
+ * cluster — a hub plus its few events, sharing nothing with the core — has no
+ * attractive tether at all: charge pushes it out until repulsion equalizes,
+ * and its distance from center is a force-balance artifact that *reads* like
+ * meaning ("why is that group exiled?") while carrying none. The pull is an
+ * order of magnitude weaker than the halo force, so distance now roughly
+ * tracks connectedness without the ring collapsing inward.
+ */
+const GRAVITY_STRENGTH = 0.04
+
+/**
+ * Breathing room for hub labels, added to the drawn radius in the collision
+ * force. A circle cannot track a zoom-dependent text rectangle exactly — label
+ * screen size is near-constant while graph-space size shrinks as the user
+ * zooms in — so this is clearance for the zoom band where a hub's label first
+ * appears, tuned by feel and capped so a long-named hub cannot demand a
+ * parking lot.
+ */
+const hubLabelClearance = (labelLength: number): number => Math.min(22, 4 + labelLength * 0.6)
 
 /**
  * Measures the canvas host, and attaches to it via a **callback ref** rather
@@ -278,10 +299,11 @@ export function GraphView() {
    * the user made in that window). Capping the target before animating is the
    * whole difference; the box-fit arithmetic is otherwise exactly what
    * `zoomToFit(600, 90)` did.
+   *
+   * Shared by the engine-stop re-fit and the toolbar's Fit all — one framing
+   * rule, however the user got lost.
    */
-  const handleEngineStop = useCallback(() => {
-    if (!refitArmed.current) return
-    refitArmed.current = false
+  const fitAll = useCallback(() => {
     const view = engine.current
     if (!view || nodes.length === 0) return
 
@@ -307,6 +329,12 @@ export function GraphView() {
     view.centerAt((minX + maxX) / 2, (minY + maxY) / 2, 600)
     view.zoom(zoom, 600)
   }, [nodes, size.width, size.height])
+
+  const handleEngineStop = useCallback(() => {
+    if (!refitArmed.current) return
+    refitArmed.current = false
+    fitAll()
+  }, [fitAll])
 
   /**
    * Forces are re-tuned whenever the drawn set changes: charge has to weaken as
@@ -343,6 +371,22 @@ export function GraphView() {
       'halo',
       forceRadial<GraphNodeObject>(radius, 0, 0).strength((node) =>
         node.model.kind === 'event' && node.model.fringe ? HALO_STRENGTH : 0,
+      ),
+    )
+
+    // The tether for untethered clusters — see GRAVITY_STRENGTH.
+    view.d3Force('gravityX', forceX<GraphNodeObject>(0).strength(GRAVITY_STRENGTH))
+    view.d3Force('gravityY', forceY<GraphNodeObject>(0).strength(GRAVITY_STRENGTH))
+
+    // Space accommodates labels: hubs claim clearance for theirs, events only
+    // their own dot. Radii are read once per re-initialization (a d3-force
+    // property), which is exactly when the drawn population changes.
+    view.d3Force(
+      'collide',
+      forceCollide<GraphNodeObject>((node) =>
+        node.model.kind === 'entity'
+          ? nodeRadius(node.model) + hubLabelClearance(entityLabel(node.model.entity).length)
+          : nodeRadius(node.model) + 1.5,
       ),
     )
   }, [nodeCount, canvasMounted])
@@ -428,13 +472,23 @@ export function GraphView() {
         setLens={setLens}
         right={
           map.events.length > 0 ? (
-            <span
-              data-testid="map-counts"
-              className="font-mono text-[11px] text-ink-faint tabular-nums"
-            >
-              {`${plural(map.hubCount, 'hub')} · ${plural(map.events.length, 'event')}${
-                map.fringeCount > 0 ? ` · ${map.fringeCount.toLocaleString()} unconnected` : ''
-              }`}
+            <span className="flex items-center gap-3">
+              <span
+                data-testid="map-counts"
+                className="font-mono text-[11px] text-ink-faint tabular-nums"
+              >
+                {`${plural(map.hubCount, 'hub')} · ${plural(map.events.length, 'event')}${
+                  map.fringeCount > 0 ? ` · ${map.fringeCount.toLocaleString()} unconnected` : ''
+                }`}
+              </span>
+              <button
+                type="button"
+                onClick={fitAll}
+                title="Frame every drawn node"
+                className="rounded border border-line px-2 py-1 text-[11px] text-ink-dim transition-colors hover:border-line-strong hover:text-ink"
+              >
+                Fit all
+              </button>
             </span>
           ) : null
         }
