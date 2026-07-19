@@ -28,6 +28,7 @@ import { StarButton } from '@renderer/views/schedule/StarButton'
 import { EdgeInspector } from './EdgeInspector'
 import { LENS_HINT, LENS_LABEL, LensSelector } from './LensSelector'
 import { SeedPrompt } from './SeedPrompt'
+import { BipartiteSpike } from './BipartiteSpike'
 import { linkColor, linkWidth, paintNode } from './paint'
 import { useNodeCache, type GraphLinkObject, type GraphNodeObject } from './useNodeCache'
 
@@ -41,6 +42,10 @@ const VELOCITY_DECAY = 0.35
  * full-pane disc. Roughly "one node reads as a node, not as the background".
  */
 const MAX_ZOOM = 2.5
+
+/** Spike (task #9). `entities` swaps in the bipartite prototype; the toggle is
+ *  here rather than behind an env flag so it can be compared side by side. */
+type GraphMode = 'ego' | 'entities'
 
 /**
  * Measures the canvas host, and attaches to it via a **callback ref** rather
@@ -90,6 +95,7 @@ export function GraphView() {
 
   const [inspected, setInspected] = useState<GraphLink | null>(null)
   const [hovered, setHovered] = useState<GraphLink | null>(null)
+  const [mode, setMode] = useState<GraphMode>('ego')
 
   const { nodes, links, nodesChanged } = useNodeCache(graph.nodes, graph.links)
 
@@ -162,6 +168,15 @@ export function GraphView() {
     return <Centered>Loading the schedule…</Centered>
   }
 
+  if (mode === 'entities') {
+    return (
+      <div ref={shellRef} className="flex min-h-0 flex-1 flex-col">
+        <Toolbar lens={lens} setLens={setLens} degrees={[]} mode={mode} setMode={setMode} right={null} />
+        <BipartiteSpike />
+      </div>
+    )
+  }
+
   if (!seed || graph.nodes.length === 0) {
     return (
       <div ref={shellRef} className="flex min-h-0 flex-1 flex-col">
@@ -169,6 +184,8 @@ export function GraphView() {
           lens={lens}
           setLens={setLens}
           degrees={[]}
+          mode={mode}
+          setMode={setMode}
           right={<span className="text-[11px] text-ink-fringe">nothing seeded</span>}
         />
         <SeedPrompt
@@ -194,6 +211,8 @@ export function GraphView() {
         lens={lens}
         setLens={setLens}
         degrees={graph.seedDegrees}
+        mode={mode}
+        setMode={setMode}
         right={
           <div className="flex items-center gap-2.5">
             {graph.omitted > 0 ? (
@@ -349,17 +368,45 @@ function Toolbar({
   lens,
   setLens,
   degrees,
+  mode,
+  setMode,
   right,
 }: {
   lens: LensId
   setLens: (lens: LensId) => void
   degrees: { lens: LensId; degree: number }[]
+  mode: GraphMode
+  setMode: (mode: GraphMode) => void
   right: React.ReactNode
 }) {
   return (
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-      <LensSelector lenses={LENSES} active={lens} onSelect={setLens} degrees={degrees} />
+      <div className="flex items-center gap-3">
+        <LensSelector lenses={LENSES} active={lens} onSelect={setLens} degrees={degrees} />
+        <ModeToggle mode={mode} setMode={setMode} />
+      </div>
       {right}
+    </div>
+  )
+}
+
+/** Spike affordance (task #9); goes away when the model is settled. */
+function ModeToggle({ mode, setMode }: { mode: GraphMode; setMode: (mode: GraphMode) => void }) {
+  return (
+    <div className="flex items-center gap-px rounded-md border border-line bg-ground-850 p-px">
+      {(['ego', 'entities'] as const).map((id) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => setMode(id)}
+          className={[
+            'rounded-[5px] px-2 py-1 text-[11px] transition-colors',
+            mode === id ? 'bg-ground-700 text-ink-bright' : 'text-ink-faint hover:text-ink',
+          ].join(' ')}
+        >
+          {id === 'ego' ? 'Ego' : 'Entities'}
+        </button>
+      ))}
     </div>
   )
 }

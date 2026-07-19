@@ -10,3 +10,5 @@ export * from './types'
 export * from './entities'
 export * from './lensIndex'
 export * from './ego'
+// Spike, task #9 — see the file header before building on it.
+export * from './bipartite'
