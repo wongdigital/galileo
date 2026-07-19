@@ -16,7 +16,7 @@ import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
 import { useGraph } from '@renderer/state/useGraph'
-import { buildBipartite, type BipartiteNode } from '@shared/graph'
+import { MIN_ENTITY_DEGREE, buildBipartite, type BipartiteNode } from '@shared/graph'
 import { palette } from './paint'
 
 interface NodeObject extends BipartiteNode {
@@ -66,13 +66,23 @@ export function BipartiteSpike() {
     [wholeCorpus, schedule.byUid, schedule.filteredUids],
   )
 
+  // The builder's options are gone — pruning is fixed at MIN_ENTITY_DEGREE and
+  // fringe events always come back — so the spike's two knobs now filter its
+  // output instead of steering the build. This file dies in U5 regardless.
   const built = useMemo(() => {
     const index = graph.indexes.get(lens)
     if (!index) return null
-    return buildBipartite(index, scopeUids, {
-      minEntityDegree: minDegree,
-      includeIsolatedEvents: showIsolated,
-    })
+    const graphData = buildBipartite(index, scopeUids)
+    if (minDegree <= MIN_ENTITY_DEGREE && showIsolated) return graphData
+
+    const hubs = graphData.nodes.filter((n) => n.kind === 'entity' && n.degree >= minDegree)
+    const kept = new Set(hubs.map((n) => n.id))
+    const links = graphData.links.filter((l) => kept.has(l.target))
+    const linked = new Set(links.map((l) => l.source))
+    const events = graphData.nodes.filter(
+      (n) => n.kind === 'event' && (linked.has(n.id) || showIsolated),
+    )
+    return { ...graphData, nodes: [...hubs, ...events], links }
   }, [graph.indexes, lens, scopeUids, minDegree, showIsolated])
 
   // Titles are resolved here rather than in the builder so the pure layer stays
@@ -211,7 +221,7 @@ export function BipartiteSpike() {
 
         <span className="ml-auto font-mono text-[11px] text-ink-faint tabular-nums">
           {counts.entities} entities · {counts.events} events · {built?.links.length ?? 0} links
-          {built && built.droppedEvents > 0 && !showIsolated ? ` · ${built.droppedEvents} hidden` : ''}
+          {built && built.fringeCount > 0 && !showIsolated ? ` · ${built.fringeCount} hidden` : ''}
         </span>
       </div>
 

@@ -1,42 +1,66 @@
 /**
- * SPIKE (task #9) — the event↔entity graph, for looking at.
+ * The entity map's edge model: a bipartite graph of events and entities.
  *
- * The shipped model in `ego.ts` draws events only, and connects two events when
- * they share an entity. That makes a shared entity a clique, and it makes an
- * event carrying Marvel *and* DC *and* Star Wars a single dot pulled between
- * three groups — welding them into one component. Measured on the Comics slice
- * under the IP lens: 659 links, largest component 256 nodes, 215 isolates.
- *
- * Here both kinds of thing are drawn. An event links to each entity it carries,
- * and nothing links event-to-event. A multi-entity event grows several lines
- * instead of being torn between clusters, and a person or franchise becomes a
- * dot you can point at — which is the question this spike exists to answer:
- * "which programs is Mark Waid in" has a visible shape.
+ * An event links to each entity it carries, and nothing links event-to-event.
+ * That is the whole difference from the ego model this replaced. There, a shared
+ * entity became a clique — measured on the Comics slice under IP, 659 links and
+ * a single 256-node component — and an event carrying Marvel *and* DC *and*
+ * Star Wars was one dot torn between three groups, welding them together. Here
+ * a multi-entity event grows several lines instead, and a person or franchise
+ * becomes a dot you can point at, so "which programs is Mark Waid in" has a
+ * visible shape.
  *
  * Links are one per event-entity pair, so they scale linearly with the corpus
  * rather than quadratically the way cliques do.
  *
- * Nothing here is load-bearing yet. If the picture works, the model it implies
- * gets designed properly and this file is replaced; if it does not, this file
- * gets deleted. Either way it should not grow features in the meantime.
+ * Two rules are fixed here rather than exposed as options, because both are
+ * judgments the spike existed to make and they are now made:
+ *
+ *   - An entity needs `MIN_ENTITY_DEGREE` in-scope events to be drawn (R4).
+ *   - Every in-scope event is returned, hub-less ones marked `fringe` (R5).
+ *
+ * Scope comes from the active filter and nothing else (R2); this layer never
+ * decides what is in scope, it only measures against what it is handed.
  */
 
 import type { GraphEntity, LensIndex } from './types'
 
 /** Events and entities share one id space on the canvas; entity ids are already
- *  lens-namespaced, so only events need a prefix to stay distinct. */
+ *  lens-namespaced, so only events need a prefix to stay distinct. Event ids are
+ *  therefore stable across lens switches, which is what makes object constancy
+ *  free for the node cache (R3). */
 const EVENT_PREFIX = 'event:'
 
 export const eventNodeId = (uid: string): string => `${EVENT_PREFIX}${uid}`
 
+/**
+ * Entities covering fewer in-scope events than this are never drawn as hubs (R4).
+ *
+ * At 1 the long tail dominates: under IP over Comics, 532 franchises of which
+ * only 94 cover two events or more. A franchise covering one event adds a dot
+ * and a line that say nothing the event's own label does not.
+ */
+export const MIN_ENTITY_DEGREE = 2
+
 export interface BipartiteNode {
   id: string
   kind: 'event' | 'entity'
+  /**
+   * Entities: the display label, first spelling wins. Events: the uid — this
+   * layer has no titles, and the view model resolves them from the schedule.
+   */
   label: string
-  /** Events: entities carried. Entities: in-scope events covered. */
+  /** Events: hubs carried. Entities: in-scope events covered. Drives label
+   *  size and visibility continuously (R12). */
   degree: number
   /** Events only — the key back into the schedule. */
   uid?: string
+  /**
+   * Events only — true when no surviving hub claims this event (R5). Always a
+   * boolean on event nodes so callers can test it without falling through
+   * `undefined`; absent on entity nodes, which are never fringe.
+   */
+  fringe?: boolean
   /** Entities only. */
   entity?: GraphEntity
 }
@@ -49,31 +73,18 @@ export interface BipartiteLink {
 export interface BipartiteGraph {
   nodes: BipartiteNode[]
   links: BipartiteLink[]
-  /** Entities that fell below `minEntityDegree`. */
-  prunedEntities: number
-  /** In-scope events left carrying no surviving entity. */
-  droppedEvents: number
+  /** Entities that cleared `MIN_ENTITY_DEGREE` and are drawn. */
+  hubCount: number
+  /** In-scope events carrying at least one hub. */
+  connectedCount: number
+  /** In-scope events carrying none — the halo (R5). Never hidden; with
+   *  `connectedCount` this sums to the scope size exactly. */
+  fringeCount: number
 }
 
-export interface BipartiteOptions {
-  /**
-   * Entities covering fewer in-scope events than this are dropped. At 1 the
-   * long tail dominates — under IP over Comics, 532 franchises of which only 94
-   * cover two events or more, and a franchise covering one event adds a dot and
-   * a line that say nothing the event's own label does not.
-   */
-  minEntityDegree?: number
-  /** Keep events that carry no surviving entity, as unattached dots. */
-  includeIsolatedEvents?: boolean
-}
-
-export function buildBipartite(
-  index: LensIndex,
-  scopeUids: readonly string[],
-  options: BipartiteOptions = {},
-): BipartiteGraph {
-  const { minEntityDegree = 2, includeIsolatedEvents = false } = options
-
+export function buildBipartite(index: LensIndex, scopeUids: readonly string[]): BipartiteGraph {
+  // Iterating the Set rather than the array dedupes a uid the caller passed
+  // twice while preserving first-appearance order — one dot per event, always.
   const scope = new Set(scopeUids)
 
   // Entity degree is counted against the scope, not the corpus. A franchise
@@ -81,11 +92,11 @@ export function buildBipartite(
   // a single-event franchise *here*, and drawing it as a hub would lie.
   const membersByEntity = new Map<string, string[]>()
   for (const [entityId, uids] of index.uidsByEntity) {
-    const inScope = uids.filter((uid) => scope.has(uid))
-    if (inScope.length >= minEntityDegree) membersByEntity.set(entityId, inScope)
+    // Overlapping source records can list the same uid twice under one entity;
+    // deduping here keeps degree honest and stops a doubled link.
+    const inScope = [...new Set(uids.filter((uid) => scope.has(uid)))]
+    if (inScope.length >= MIN_ENTITY_DEGREE) membersByEntity.set(entityId, inScope)
   }
-
-  const prunedEntities = index.uidsByEntity.size - membersByEntity.size
 
   const nodes: BipartiteNode[] = []
   const links: BipartiteLink[] = []
@@ -101,15 +112,15 @@ export function buildBipartite(
     }
   }
 
-  let droppedEvents = 0
-  for (const uid of scopeUids) {
+  const hubCount = nodes.length
+  let fringeCount = 0
+
+  for (const uid of scope) {
     const degree = eventDegree.get(uid) ?? 0
-    if (degree === 0) {
-      droppedEvents += 1
-      if (!includeIsolatedEvents) continue
-    }
-    nodes.push({ id: eventNodeId(uid), kind: 'event', label: uid, degree, uid })
+    const fringe = degree === 0
+    if (fringe) fringeCount += 1
+    nodes.push({ id: eventNodeId(uid), kind: 'event', label: uid, degree, uid, fringe })
   }
 
-  return { nodes, links, prunedEntities, droppedEvents }
+  return { nodes, links, hubCount, connectedCount: scope.size - fringeCount, fringeCount }
 }
