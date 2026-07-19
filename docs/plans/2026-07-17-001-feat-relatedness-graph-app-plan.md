@@ -351,7 +351,20 @@ The facet model is a first-class design deliverable, not tag cleanup. **Curated 
 
 ---
 
-- U6. **The Relatedness Graph**
+- U6. **The Relatedness Graph** — SUPERSEDED 2026-07-19
+
+> **Superseded by `docs/plans/2026-07-19-001-feat-entity-map-graph-plan.md`.**
+>
+> U6 was built and shipped as designed. Measured against the real corpus, the
+> ego model failed at its own job: a shared entity becomes a clique (Comics + IP:
+> 659 links, one 256-node component, 215 isolates), multi-entity events weld
+> clusters together, and the seed-prompt interaction confused its one user. The
+> replacement is a bipartite event↔entity map — entities as sized hubs, events as
+> dots, the active filter as the only scope. The seed model, the ego layer, and
+> the edge inspector are deleted rather than kept as a mode.
+>
+> Everything below is retained as the record of what was built and why, not as a
+> description of the current app.
 
 **Goal:** The centerpiece: ego-network with switchable lenses, animated transitions, fringe, edge inspection.
 
@@ -438,13 +451,21 @@ The facet model is a first-class design deliverable, not tag cleanup. **Curated 
 
 ---
 
-- U9. **Observatory elevation pass**
+- U9. **Observatory elevation pass** — BRIEF SHRUNK 2026-07-19
+
+> **Narrowed by `docs/plans/2026-07-19-001-feat-entity-map-graph-plan.md` (R13).**
+>
+> The entity map pulled the legibility half of this work forward and shipped it:
+> hover/pin dimming, the fringe halo, and continuous degree-scaled labels are
+> done. What remains here is the elevation half — community-coloured edges,
+> palette, a designed glow treatment beyond the shipped `shadowBlur` base, and
+> motion polish. The graph line below should be read against that narrower brief.
 
 **Goal:** From "themed" to portfolio-grade: motion, type, spatial polish across both views.
 
 **Requirements:** R16, R17
 
-**Dependencies:** U5, U6 (surfaces exist)
+**Dependencies:** U5, U6 (surfaces exist; the graph surface is now the entity map)
 
 **Files:**
 - Modify: theme tokens, graph rendering (glow/label treatment), schedule view (density, hierarchy), sidebar; app icon assets

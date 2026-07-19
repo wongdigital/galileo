@@ -1,7 +1,7 @@
 ---
 title: "feat: Entity map replaces the ego graph"
 type: feat
-status: active
+status: completed
 date: 2026-07-19
 origin: docs/brainstorms/2026-07-19-entity-map-graph-requirements.md
 ---

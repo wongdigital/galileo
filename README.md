@@ -82,6 +82,16 @@ Aliases are applied **last** in the merge, so a rerun never clobbers a correctio
 
 **Curating `data/facet-map.json`.** 144 of Sched's ~181 sub-category tags map to facet dimensions. Unmapped tags surface in a review bucket rather than being silently dropped—most are guest names and small publishers used as sub-categories, which are correctly not facets. Add genuinely new tags as the con approaches; facets are applied at runtime, so con-week NEW events keep working facets without a recompile.
 
+## The entity map
+
+The second view is a bipartite map: **entities** — a person, a franchise, a genre, an offering cluster — are hubs sized by how many events they cover, **events** are dots, and one link joins each event to each entity it carries. A lens picks which kind of entity is drawn; the active filter is the map's only scope, so what the sidebar holds is what the map draws.
+
+It replaced an ego-network model that drew events only and connected two events sharing an entity. That shape does not survive the real corpus: a shared entity becomes a clique, so the Comics slice under the IP lens produced 659 links, a single 256-node component, and 215 isolated events. Linking through entities instead makes links scale linearly with the corpus rather than quadratically, and it makes "which programs is this person in" a dot you can point at. See `docs/plans/2026-07-19-001-feat-entity-map-graph-plan.md`.
+
+Two rules keep the picture readable. An entity needs at least two in-scope events to be drawn at all — a franchise covering one event adds a dot and a line that say nothing the event's own label does not. And events no hub claims are never hidden; a weak radial force gathers them into a dim halo at the rim, where they stay hoverable like everything else.
+
+Clicking a hub or a dot pins it and opens a card. Event cards are shared with the 5-day list, so the same click opens the same card in either view, and star and change encodings are read from one place — a starred, moved event looks the same as a row, as a dot, and on the card.
+
 ## Exporting to your phone
 
 Export starred sessions for a single day or the whole con. Import the generated `.ics` into a **dedicated calendar**, not your main one. To refresh after schedule changes, delete that calendar and re-import—event UIDs are stable, so unchanged events keep their identity.

@@ -1,18 +1,18 @@
 /**
- * The relatedness graph's pure layer (U6).
+ * The entity map's pure layer.
  *
- * A lens is a rule for what "related" means. Each one reduces an event to a set
- * of **entities** — a person, a franchise, a genre, an offering cluster — and two
- * events are related under that lens when they carry the same entity. Nothing
- * here knows about d3, canvas, or React; the whole edge model is a set-membership
- * problem over strings, which is why it can be tested without a DOM.
+ * A lens is a rule for what an event is *about*. Each one reduces an event to a
+ * set of **entities** — a person, a franchise, a genre, an offering cluster.
+ * Nothing here knows about d3, canvas, or React; the whole model is a
+ * set-membership problem over strings, which is why it can be tested without a
+ * DOM.
  *
- * The graph never materializes all pairs. The corpus makes that impossible to
- * ignore: `genre:comics` alone covers 486 events, which is 117,855 pairs for one
- * value of one dimension. Instead the index stores entity -> uids, and edges are
- * computed only within a bounded node set (see `ego.ts`). That is the difference
- * between a lens that answers "what else is like this" and one that renders a
- * hairball.
+ * The map never materializes pairs of events. The corpus makes that impossible
+ * to ignore: `genre:comics` alone covers 486 events, which is 117,855 pairs for
+ * one value of one dimension — and the ego model that did draw those pairs is
+ * exactly what the bipartite map replaced. Here the index stores entity -> uids
+ * and the map draws one link per event-entity pair, so links scale linearly with
+ * the corpus rather than quadratically.
  */
 
 export type LensId = 'people' | 'ip' | 'facets' | 'offering'
@@ -61,14 +61,4 @@ export interface LensIndex {
   /** uid -> entity ids. The inverse, kept because expansion walks both ways. */
   entitiesByUid: Map<string, string[]>
   entities: Map<string, GraphEntity>
-}
-
-/** One undirected edge, carrying every entity the pair has in common — the
- *  inspector's whole job is to name those. */
-export interface GraphLink {
-  source: string
-  target: string
-  entities: GraphEntity[]
-  /** Sum of per-entity specificity; see `specificity` in `ego.ts`. */
-  strength: number
 }

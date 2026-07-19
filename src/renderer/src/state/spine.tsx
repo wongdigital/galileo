@@ -25,7 +25,12 @@ import type { LensId } from '@shared/graph'
  * docs/solutions/2026-07-18-uid-is-the-identity-key.md.
  *
  * U2 established the container and the view toggle; U5 adds the dataset,
- * filters, stars, and refresh. U6 adds lens and seed.
+ * filters, stars, and refresh; U6 adds the lens.
+ *
+ * The graph's seed lived here until the entity map replaced the ego view. It is
+ * gone rather than deprecated: the map's scope is the filter, and its only local
+ * state is a transient pin on an entity, which is not a spine UID and does not
+ * belong in a store two views read.
  */
 
 export type ViewMode = 'graph' | 'schedule'
@@ -61,32 +66,13 @@ export interface SpineState {
   activeDay: string | null
   setActiveDay: (day: string | null) => void
 
-  /** Which rule the graph's edges follow. Independent of the seed, so switching
-   *  it keeps the node set and swaps only the links (R6). */
+  /**
+   * What "related" means on the entity map: which entities an event is reduced
+   * to. It is the map's only mode — the scope comes from the filter, and the
+   * map holds no state of its own beyond a transient pin.
+   */
   lens: LensId
   setLens: (lens: LensId) => void
-  /** What the graph is currently centred on. Null is the designed prompt state,
-   *  never an empty canvas and never the whole corpus. */
-  seed: GraphSeed | null
-  setSeed: (seed: GraphSeed | null) => void
-}
-
-/**
- * The seed carries the lens it was expanded under, not just the uids.
- *
- * That is what lets the node set survive a lens switch while still being a
- * derived value rather than stored state: the nodes are `expandEgo(seed.lens)`,
- * the links are computed under the *active* lens, and a node with no edge under
- * the new lens keeps its place and dims to the rim. Storing the node list
- * instead would make it the one projection the spine holds — exactly the class
- * of desync the derived-state rule exists to prevent.
- */
-export interface GraphSeed {
-  uids: string[]
-  lens: LensId
-  hops: 1 | 2
-  /** Where the seed came from, so the UI can explain what it is showing. */
-  origin: 'selection' | 'stars' | 'filter'
 }
 
 const SpineContext = createContext<SpineState | null>(null)
@@ -118,7 +104,6 @@ export function SpineProvider({ children }: { children: ReactNode }) {
   // corpus — people covers Programs and Autographs, IP covers Anime and Games,
   // and the app boots into neither half in particular.
   const [lens, setLens] = useState<LensId>('ip')
-  const [seed, setSeed] = useState<GraphSeed | null>(null)
 
   // Guards the effect against StrictMode's double-invoke, which would otherwise
   // fire two live fetches at Sched on every mount in development.
@@ -241,8 +226,6 @@ export function SpineProvider({ children }: { children: ReactNode }) {
       setActiveDay,
       lens,
       setLens,
-      seed,
-      setSeed,
     }),
     [
       view,
@@ -259,7 +242,6 @@ export function SpineProvider({ children }: { children: ReactNode }) {
       filter,
       activeDay,
       lens,
-      seed,
     ],
   )
 

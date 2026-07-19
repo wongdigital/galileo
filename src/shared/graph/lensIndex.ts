@@ -1,10 +1,9 @@
 /**
  * The per-lens entity index: entity -> uids, and its inverse.
  *
- * Built once per dataset per lens and then read-only. Everything the graph does
- * — expansion, edge computation, the per-lens degree hint — is a lookup in one
- * of these two maps, which is what keeps lens switching instant on a corpus of
- * 3,474 events.
+ * Built once per dataset per lens and then read-only. Everything the map is
+ * built from — hubs, links, degrees — is a lookup in one of these two maps,
+ * which is what keeps lens switching instant on a corpus of 3,474 events.
  */
 
 import { entitiesFor } from './entities'
@@ -36,34 +35,12 @@ export function buildLensIndex(records: readonly GraphRecord[], lens: LensId): L
   return { lens, uidsByEntity, entitiesByUid, entities }
 }
 
-/** Every lens at once. The graph holds all four so switching costs a lookup,
- *  and so the zero-edge escape hatch can quote counts for the lenses the user
- *  is *not* currently looking at. */
+/** Every lens at once. The map holds all four so switching costs a lookup, and
+ *  so the all-fringe state can count the hubs a lens *would* draw over the
+ *  current scope without rebuilding anything. */
 export function buildLensIndexes(
   records: readonly GraphRecord[],
   lenses: readonly LensId[]
 ): Map<LensId, LensIndex> {
   return new Map(lenses.map((lens) => [lens, buildLensIndex(records, lens)]))
-}
-
-/**
- * How many distinct events this one connects to under a lens, ignoring every
- * cap. This is the number behind "no IP connections — People has 4", so it has
- * to be the honest total rather than what the current view happens to draw.
- */
-export function degreeFor(index: LensIndex, uid: string): number {
-  const neighbours = new Set<string>()
-  for (const entityId of index.entitiesByUid.get(uid) ?? []) {
-    for (const other of index.uidsByEntity.get(entityId) ?? []) {
-      if (other !== uid) neighbours.add(other)
-    }
-  }
-  return neighbours.size
-}
-
-export function degreesByLens(
-  indexes: ReadonlyMap<LensId, LensIndex>,
-  uid: string
-): { lens: LensId; degree: number }[] {
-  return [...indexes.entries()].map(([lens, index]) => ({ lens, degree: degreeFor(index, uid) }))
 }
