@@ -2,8 +2,10 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { fetchScheduleSources } from './fetchExecutor'
 import { SnapshotStore } from './snapshotStore'
+import { StarStore, registerStarIpc } from './starStore'
+import { registerIcsIpc } from './icsExport'
 import { CURRENT_SCHEMA_VERSION, acknowledgeChanges, buildDataset, resolveRefresh } from '../shared/schedule'
-import type { DatasetProjection, FetchedDataset } from '../shared/schedule'
+import type { DatasetProjection, FetchedDataset, ScheduleEvent } from '../shared/schedule'
 
 /**
  * Electron main process. All I/O lives on this side of the bridge — fetch
@@ -49,6 +51,20 @@ function createWindow(): void {
 const SITE = process.env.SCHED_SITE ?? 'https://comiccon2026.sched.com'
 
 let store: SnapshotStore
+let stars: StarStore
+
+/**
+ * The canonical event list, resolved from main's own snapshots.
+ *
+ * Export reads through this rather than accepting event bodies from the
+ * renderer: the renderer sends `{uids, options}` and nothing else, so an
+ * exported calendar cannot drift from what the app actually holds. Prefers
+ * last-known-good, because that is the data the user has been looking at; falls
+ * back to last-fetched only when no baseline has been promoted yet (first run).
+ */
+function canonicalEvents(): readonly ScheduleEvent[] {
+  return (store.readSnapshot('last-known-good') ?? store.readSnapshot('last-fetched'))?.events ?? []
+}
 
 /**
  * One refresh: two HTTP requests, parse, sanitize, join, then let the guard
@@ -87,7 +103,7 @@ async function refreshSchedule(acceptAnyway: boolean): Promise<DatasetProjection
 
 /**
  * IPC surface — one named method per channel (see src/preload/index.ts).
- * U5 adds the star channels, U7 adds the real ICS export.
+ * Star and export channels register themselves; see starStore and icsExport.
  */
 function registerIpc(): void {
   ipcMain.handle('schedule:refresh', async (_e, options?: { acceptAnyway?: boolean }) => {
@@ -102,13 +118,15 @@ function registerIpc(): void {
     return log.entries
   })
 
-  ipcMain.handle('export:ics', async (_e, _payload: { uids: string[]; options?: unknown }) => {
-    return { status: 'not-implemented' as const, path: null, exported: 0, excluded: [] }
-  })
+  // Stars and export own their own channels; main just supplies the store and
+  // the canonical-event resolver so neither has to reach for renderer state.
+  registerStarIpc(ipcMain, stars)
+  registerIcsIpc(ipcMain, canonicalEvents)
 }
 
 app.whenReady().then(() => {
   store = new SnapshotStore(app.getPath('userData'))
+  stars = new StarStore(app.getPath('userData'))
   registerIpc()
   createWindow()
 
