@@ -141,6 +141,11 @@ export function useSchedule(): ScheduleModel {
   const allGhosts = useMemo(() => buildGhostRows(stars, base.liveUids), [stars, base.liveUids])
   const ghosts = useMemo(() => ghostsForDay(allGhosts, resolvedDay), [allGhosts, resolvedDay])
 
+  // Memoized for its *identity*, not its cost. Consumers use it as a dependency,
+  // and a fresh array on every render restarts anything keyed on it — which is
+  // how hovering a node came to reset the force layout underneath it.
+  const filteredUids = useMemo(() => filtered.map((c) => c.uid), [filtered])
+
   // Only worth computing when there is nothing to show — it re-runs the engine
   // once per active chip, which is wasted work the rest of the time.
   const hints = useMemo(
@@ -155,7 +160,7 @@ export function useSchedule(): ScheduleModel {
     candidates: base.candidates,
     matchContext,
     filteredCount: filtered.length,
-    filteredUids: filtered.map((c) => c.uid),
+    filteredUids,
     totalCount: base.candidates.length,
     filterActive: !isEmptyFilter(filter),
     days,

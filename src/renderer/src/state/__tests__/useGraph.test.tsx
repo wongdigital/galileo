@@ -229,4 +229,24 @@ describe('useGraph', () => {
     await waitFor(() => expect(result.current.graph.nodes).toHaveLength(1))
     expect(result.current.graph.nodes[0]?.uid).toBe('p1')
   })
+
+  /**
+   * Regression: `filteredUids` was built inside `useSchedule`'s return literal,
+   * so a new array came back on every render even when the filter had not moved.
+   * Anything holding it as a memo dependency rebuilt on unrelated state changes —
+   * and a force layout keyed on rebuilt data restarts, so the entity graph reset
+   * itself the moment a hover set state. Identity is the contract here, not
+   * contents, which is why this asserts `toBe` and not `toEqual`.
+   */
+  it('hands back the same filteredUids array when the filter has not changed', async () => {
+    const view = await mountReady()
+    const first = view.result.current.schedule.filteredUids
+
+    view.rerender()
+    expect(view.result.current.schedule.filteredUids).toBe(first)
+
+    // A state change that touches no filter input — the hover case.
+    act(() => view.result.current.spine.setSelectedUid('p1'))
+    expect(view.result.current.schedule.filteredUids).toBe(first)
+  })
 })
