@@ -58,6 +58,7 @@ import {
   type LensId,
 } from '@shared/graph'
 import { LENS_LABEL, LensSelector } from './LensSelector'
+import { MiniMap } from './MiniMap'
 import { linkColor, linkWidth, nodeRadius, paintMapNode } from './paint'
 import { useNodeCache, type GraphLinkObject, type GraphNodeObject } from './useNodeCache'
 
@@ -573,6 +574,10 @@ export function GraphView() {
               )}
             </div>
           </div>
+        ) : null}
+
+        {canvasMounted ? (
+          <MiniMap nodes={nodes} engine={engine} viewWidth={size.width} viewHeight={size.height} />
         ) : null}
 
         {pinnedHub ? (

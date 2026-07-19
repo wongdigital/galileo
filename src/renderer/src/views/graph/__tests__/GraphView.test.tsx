@@ -49,8 +49,11 @@ vi.mock('react-force-graph-2d', async () => {
         ref: Ref<unknown>,
       ) => {
         react.useImperativeHandle(ref, () => ({
-          centerAt: () => {
-            engine.fits += 1
+          // The getter form ({x,y}, no args) is the minimap polling the
+          // transform — only setter calls count as a framing.
+          centerAt: (...args: unknown[]) => {
+            if (args.length > 0) engine.fits += 1
+            return { x: 0, y: 0 }
           },
           zoom: (k?: number) => {
             if (typeof k === 'number') engine.zooms.push(k)
@@ -434,6 +437,18 @@ describe('GraphView — re-fitting on scope change', () => {
     // a second of full-pane discs before the correction lands.
     expect(engine.zooms.length).toBeGreaterThan(0)
     for (const zoom of engine.zooms) expect(zoom).toBeLessThanOrEqual(2.5)
+  })
+})
+
+describe('GraphView — the navigator', () => {
+  it('mounts the minimap with the canvas and drops it with an empty scope', async () => {
+    await mountSized()
+    expect(screen.getByTestId('minimap')).toBeTruthy()
+
+    // What it draws is canvas work jsdom cannot see; presence and lifecycle
+    // are the contract assertable here.
+    act(() => spine.setFilter({ ...spine.filter, text: 'nothing matches this' }))
+    await waitFor(() => expect(screen.queryByTestId('minimap')).toBeNull())
   })
 })
 
