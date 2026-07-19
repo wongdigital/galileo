@@ -53,6 +53,7 @@ export interface Palette {
   new: string
   fringe: string
   ink: string
+  inkBright: string
   inkDim: string
   line: string
 }
@@ -75,6 +76,7 @@ export function palette(): Palette {
     new: token('--color-new'),
     fringe: token('--color-ink-fringe'),
     ink: token('--color-ink'),
+    inkBright: token('--color-ink-bright'),
     inkDim: token('--color-ink-dim'),
     line: token('--color-line-strong'),
   }

@@ -114,10 +114,12 @@ export function MiniMap({ nodes, engine, viewWidth, viewHeight }: MiniMapProps) 
       if (!zoom || !center) return
       const w = (viewWidth / zoom) * scale
       const h = (viewHeight / zoom) * scale
-      ctx.strokeStyle = withAlpha(colors.lumen, 0.9)
+      // White, not lumen — the viewport rectangle has to read against a field
+      // of blue hub dots, and a blue outline disappears into them.
+      ctx.strokeStyle = withAlpha(colors.inkBright, 0.95)
       ctx.lineWidth = 1
       ctx.strokeRect(toMiniX(center.x) - w / 2, toMiniY(center.y) - h / 2, w, h)
-      ctx.fillStyle = withAlpha(colors.lumen, 0.07)
+      ctx.fillStyle = withAlpha(colors.inkBright, 0.08)
       ctx.fillRect(toMiniX(center.x) - w / 2, toMiniY(center.y) - h / 2, w, h)
     }
 
