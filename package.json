@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.3",
+    "@tanstack/react-virtual": "^3.14.6",
+    "ical-generator": "^11.0.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

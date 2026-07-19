@@ -84,7 +84,11 @@ Aliases are applied **last** in the merge, so a rerun never clobbers a correctio
 
 ## Exporting to your phone
 
-Import the generated `.ics` into a **dedicated calendar**, not your main one. To refresh after schedule changes, delete that calendar and re-import—event UIDs are stable, so unchanged events keep their identity.
+Export starred sessions for a single day or the whole con. Import the generated `.ics` into a **dedicated calendar**, not your main one. To refresh after schedule changes, delete that calendar and re-import—event UIDs are stable, so unchanged events keep their identity.
+
+Panels and screenings export with a 15-minute alarm. All-day and drop-in blocks (games tables, autograph lines) export without one—a 15-minute warning for a room that has been open since 10am is noise. Cancelled sessions and stars whose events have left the schedule are skipped, and the app names what it skipped rather than quietly exporting five of your six stars.
+
+Times carry `TZID=America/Los_Angeles` on each event. Apple Calendar is the target; Google Calendar ignores imported alarms.
 
 ## Notes
 
