@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MIN_ENTITY_DEGREE, buildBipartite, eventNodeId } from '../bipartite'
+import { MIN_ENTITY_DEGREE, buildBipartite, eventNodeId, eventUidOf, hubCount } from '../bipartite'
 import { buildLensIndex } from '../lensIndex'
 import type { GraphRecord } from '../types'
 import { ANIME_RECORDS, PROGRAM_RECORDS, genreCrowd, record } from './fixtures'
@@ -179,5 +179,55 @@ describe('buildBipartite — identity', () => {
     const people = buildBipartite(buildLensIndex(PROGRAM_RECORDS, 'people'), uids(PROGRAM_RECORDS))
 
     expect(events(ip).map((n) => n.id).sort()).toEqual(events(people).map((n) => n.id).sort())
+  })
+
+  it('inverts eventNodeId, and passes non-event ids through untouched', () => {
+    expect(eventUidOf(eventNodeId('p1'))).toBe('p1')
+    expect(eventUidOf('ip:star-wars')).toBe('ip:star-wars')
+  })
+})
+
+/**
+ * `hubCount` is the overlay's promise: "People has 3" must be the number of
+ * hubs a switch to People actually draws. So every case here asserts it against
+ * `buildBipartite` itself, not against a hand-computed constant — the two share
+ * the membership rule, and this is the proof they cannot drift.
+ */
+describe('hubCount — the overlay quote', () => {
+  const scope = (ids: readonly string[]): ReadonlySet<string> => new Set(ids)
+
+  it('matches what buildBipartite draws over the same scope', () => {
+    const index = buildLensIndex(PROGRAM_RECORDS, 'ip')
+    const ids = uids(PROGRAM_RECORDS)
+
+    expect(hubCount(index, scope(ids))).toBe(buildBipartite(index, ids).hubCount)
+    expect(hubCount(index, scope(ids))).toBe(1)
+  })
+
+  it('counts degree against the scope, matching R4 pruning', () => {
+    const index = buildLensIndex(genreCrowd(5), 'facets')
+
+    // One in-scope member is below MIN_ENTITY_DEGREE — no hub, here or drawn.
+    expect(hubCount(index, scope(['c0']))).toBe(buildBipartite(index, ['c0']).hubCount)
+    expect(hubCount(index, scope(['c0']))).toBe(0)
+    expect(hubCount(index, scope(['c0', 'c1']))).toBe(1)
+  })
+
+  it('dedupes overlapping records the way the builder does', () => {
+    // The same uid listed twice under one entity: counting raw entries would
+    // let it clear the bar here while the builder prunes it — the overlay
+    // would offer a lens that lands on the identical all-fringe map.
+    const records = [
+      record('d1', { franchises: [{ surface_text: 'Star Wars', canonical: 'star-wars' }] }),
+      record('d1', { franchises: [{ surface_text: 'star wars', canonical: 'star-wars' }] }),
+    ]
+    const index = buildLensIndex(records, 'ip')
+
+    expect(hubCount(index, scope(['d1']))).toBe(buildBipartite(index, ['d1']).hubCount)
+    expect(hubCount(index, scope(['d1']))).toBe(0)
+  })
+
+  it('is zero over an empty scope', () => {
+    expect(hubCount(buildLensIndex(PROGRAM_RECORDS, 'ip'), scope([]))).toBe(0)
   })
 })

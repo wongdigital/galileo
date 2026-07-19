@@ -95,8 +95,9 @@ export interface EntityMapModel {
    *  re-fits on: a filter edit changes it, a lens switch does not. */
   scopeUids: string[]
   /** Surfaced here so the view can explain an empty scope without mounting a
-   *  second `useSchedule` — its layers are per-instance, so a second call would
-   *  re-run `classifyAll` and `applyFacets` over the whole corpus. */
+   *  second `useSchedule`. Its corpus pass is shared across instances now, but
+   *  the filter layers are still per-instance — and one boolean does not earn
+   *  a second run of those. */
   filterActive: boolean
 }
 

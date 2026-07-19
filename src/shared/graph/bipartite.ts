@@ -33,6 +33,11 @@ const EVENT_PREFIX = 'event:'
 
 export const eventNodeId = (uid: string): string => `${EVENT_PREFIX}${uid}`
 
+/** The inverse — a node id back to its uid. Non-event ids pass through
+ *  unchanged, so callers filtering a mixed id list can apply it blindly. */
+export const eventUidOf = (nodeId: string): string =>
+  nodeId.startsWith(EVENT_PREFIX) ? nodeId.slice(EVENT_PREFIX.length) : nodeId
+
 /**
  * Entities covering fewer in-scope events than this are never drawn as hubs (R4).
  *
@@ -82,6 +87,30 @@ export interface BipartiteGraph {
   fringeCount: number
 }
 
+/**
+ * An entity's members restricted to the scope, deduped. Overlapping source
+ * records can list the same uid twice under one entity; deduping here keeps
+ * degree honest and stops a doubled link. This is *the* hub-membership rule —
+ * `buildBipartite` and `hubCount` both judge through it, so the overlay's
+ * "People has 3" claim and what a lens switch actually draws cannot drift.
+ */
+const inScopeMembers = (uids: readonly string[], scope: ReadonlySet<string>): string[] => [
+  ...new Set(uids.filter((uid) => scope.has(uid))),
+]
+
+/**
+ * How many hubs a lens would draw over this scope — the same judgment
+ * `buildBipartite` makes, without building the graph. The all-fringe overlay
+ * quotes this for the lenses it is not showing.
+ */
+export function hubCount(index: LensIndex, scope: ReadonlySet<string>): number {
+  let count = 0
+  for (const uids of index.uidsByEntity.values()) {
+    if (inScopeMembers(uids, scope).length >= MIN_ENTITY_DEGREE) count += 1
+  }
+  return count
+}
+
 export function buildBipartite(index: LensIndex, scopeUids: readonly string[]): BipartiteGraph {
   // Iterating the Set rather than the array dedupes a uid the caller passed
   // twice while preserving first-appearance order — one dot per event, always.
@@ -92,9 +121,7 @@ export function buildBipartite(index: LensIndex, scopeUids: readonly string[]): 
   // a single-event franchise *here*, and drawing it as a hub would lie.
   const membersByEntity = new Map<string, string[]>()
   for (const [entityId, uids] of index.uidsByEntity) {
-    // Overlapping source records can list the same uid twice under one entity;
-    // deduping here keeps degree honest and stops a doubled link.
-    const inScope = [...new Set(uids.filter((uid) => scope.has(uid)))]
+    const inScope = inScopeMembers(uids, scope)
     if (inScope.length >= MIN_ENTITY_DEGREE) membersByEntity.set(entityId, inScope)
   }
 

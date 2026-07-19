@@ -24,8 +24,10 @@ import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 const { HASH_OF_EMPTY, engine } = vi.hoisted(() => ({
   HASH_OF_EMPTY: 'e3b0c44298fc1c14',
   /** The imperative handle GraphView drives, and a way to fire `onEngineStop`
-   *  from a test — the settle never happens without a real simulation. */
-  engine: { fits: 0, stop: null as null | (() => void) },
+   *  from a test — the settle never happens without a real simulation. A fit is
+   *  a `centerAt` + `zoom` pair; `fits` counts the pairs, `zooms` records every
+   *  requested zoom level so the MAX_ZOOM cap is assertable. */
+  engine: { fits: 0, zooms: [] as number[], stop: null as null | (() => void) },
 }))
 
 vi.mock('react-force-graph-2d', async () => {
@@ -47,10 +49,13 @@ vi.mock('react-force-graph-2d', async () => {
         ref: Ref<unknown>,
       ) => {
         react.useImperativeHandle(ref, () => ({
-          zoomToFit: () => {
+          centerAt: () => {
             engine.fits += 1
           },
-          zoom: () => 1,
+          zoom: (k?: number) => {
+            if (typeof k === 'number') engine.zooms.push(k)
+            return 1
+          },
           // Both the getter (`d3Force('charge')?.strength(…)`) and the setter
           // (`d3Force('halo', force)`) shapes, since the view uses each.
           d3Force: () => ({ strength: () => undefined, distance: () => undefined }),
@@ -156,6 +161,7 @@ const projection = (): DatasetProjection => ({
 
 beforeEach(() => {
   engine.fits = 0
+  engine.zooms = []
   engine.stop = null
   ;(window as unknown as { api: unknown }).api = {
     schedule: { refresh: vi.fn(async () => projection()) },
@@ -276,6 +282,20 @@ describe('GraphView — pinning (R7, AE3)', () => {
     expect(await screen.findByLabelText(EVENT_CARD)).toBeTruthy()
   })
 
+  it('clears an event pin whose dot leaves the scope, card and all', async () => {
+    await mountSized()
+    fireEvent.click(await screen.findByTestId('node:event:p1'))
+    await screen.findByLabelText(EVENT_CARD)
+
+    // The pinned dot drops out of scope. The card must go with it: EventCard's
+    // lookup is dataset-wide and would happily keep describing an event that is
+    // nowhere on the canvas, floating over an undimmed map.
+    act(() => spine.setFilter({ ...spine.filter, text: 'Panel Two' }))
+
+    await waitFor(() => expect(spine.selectedUid).toBeNull())
+    expect(screen.queryByLabelText(EVENT_CARD)).toBeNull()
+  })
+
   it('re-pins to an event when a row inside the entity card is clicked', async () => {
     await mountSized()
     fireEvent.click(await screen.findByTestId('node:ip:star-wars'))
@@ -318,6 +338,19 @@ describe('GraphView — the all-fringe scope', () => {
     expect(screen.getByText(/IP has 1/)).toBeTruthy()
     // Still a map, not an empty state — every event is drawn as fringe.
     expect(screen.getByTestId('node:event:p1')).toBeTruthy()
+  })
+
+  it('says when no lens connects the scope, rather than going silent', async () => {
+    await mountSized()
+    await screen.findByTestId('node:ip:star-wars')
+
+    // One event left: nothing shares anything with itself under any lens. The
+    // overlay must still explain the scatter — a dead end with no narration
+    // reads as "the map is broken".
+    act(() => spine.setFilter({ ...spine.filter, text: 'Panel One' }))
+
+    expect(await screen.findByText(/No IP hubs here/)).toBeTruthy()
+    expect(screen.getByText(/No other lens connects these events either/)).toBeTruthy()
   })
 })
 
@@ -362,6 +395,34 @@ describe('GraphView — re-fitting on scope change', () => {
     settle()
 
     expect(engine.fits).toBe(before)
+  })
+
+  it('cancels a filter-armed re-fit when a lens switch lands before the settle', async () => {
+    await mountSized()
+    settle()
+    const before = engine.fits
+
+    // Arm with a filter edit, then switch lens with the settle still in
+    // flight. The stale arm used to survive the switch and fire on the
+    // reorganization's engine stop — the mid-transition yank R3 forbids.
+    act(() => spine.setFilter({ ...spine.filter, text: 'Panel One' }))
+    await waitFor(() => expect(screen.queryByTestId('node:event:p2')).toBeNull())
+    act(() => spine.setLens('people'))
+    settle()
+
+    expect(engine.fits).toBe(before)
+  })
+
+  it('caps the fit at MAX_ZOOM before animating, not after', async () => {
+    await mountSized()
+    settle()
+
+    // Freshly spawned fixture nodes cluster inside a ±12px jitter box, the
+    // degenerate near-zero-area scope: an uncapped box-fit against a
+    // 1200×800 pane computes a triple-digit zoom, and a post-hoc clamp means
+    // a second of full-pane discs before the correction lands.
+    expect(engine.zooms.length).toBeGreaterThan(0)
+    for (const zoom of engine.zooms) expect(zoom).toBeLessThanOrEqual(2.5)
   })
 })
 

@@ -78,6 +78,13 @@ export function EntityCard({ label, memberUids, onSelectEvent, onDismiss }: Enti
               aria-label={event.title}
               onClick={() => onSelectEvent(event.uid)}
               onKeyDown={(e) => {
+                // Only keys aimed at the row itself. The star button inside is
+                // a real <button> whose Enter/Space arrive here by bubbling —
+                // `preventDefault()` on those would cancel its native
+                // activation and re-pin instead of starring, making the star
+                // unreachable by keyboard. (The mouse path has the same shape
+                // and is guarded by the star's own `stopPropagation`.)
+                if (e.target !== e.currentTarget) return
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
                   onSelectEvent(event.uid)

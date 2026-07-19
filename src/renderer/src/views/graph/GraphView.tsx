@@ -51,11 +51,11 @@ import { EntityCard } from '@renderer/components/EntityCard'
 import { valueLabel } from '@renderer/sidebar/labels'
 import {
   LENSES,
-  MIN_ENTITY_DEGREE,
   eventNodeId,
+  eventUidOf,
+  hubCount,
   type GraphEntity,
   type LensId,
-  type LensIndex,
 } from '@shared/graph'
 import { LENS_LABEL, LensSelector } from './LensSelector'
 import { linkColor, linkWidth, nodeRadius, paintMapNode } from './paint'
@@ -68,9 +68,10 @@ const ALPHA_MIN = 0.12
 const VELOCITY_DECAY = 0.35
 
 /**
- * Ceiling on the post-fit zoom. A two-node scope has a near-zero-area bounding
- * box, and fitting that to the viewport magnifies a pair of dots into full-pane
- * discs. Roughly "one node reads as a node, not as the background".
+ * Ceiling on the fit's target zoom, applied *before* the animation starts. A
+ * two-node scope has a near-zero-area bounding box, and fitting that to the
+ * viewport magnifies a pair of dots into full-pane discs. Roughly "one node
+ * reads as a node, not as the background".
  */
 const MAX_ZOOM = 2.5
 
@@ -124,26 +125,6 @@ function entityLabel(entity: GraphEntity): string {
   return entity.lens === 'facets' ? valueLabel('genre', entity.id.replace(/^genre:/, '')) : entity.label
 }
 
-/** How many hubs a lens *would* draw over this scope. Cheap over the already
- *  built indexes, and the replacement for the ego view's per-seed degree hint. */
-function hubCountFor(index: LensIndex, scope: ReadonlySet<string>): number {
-  let count = 0
-  for (const uids of index.uidsByEntity.values()) {
-    // Deduped, because `buildBipartite` dedupes the same bucket before applying
-    // the same threshold. Counting raw entries would let an entity whose bucket
-    // lists one uid twice (overlapping source records) clear the bar here and be
-    // pruned there — so the overlay would offer a way out that lands the user on
-    // the identical all-fringe map, now pointing back where they came from.
-    const inScope = new Set<string>()
-    for (const uid of uids) {
-      if (scope.has(uid)) inScope.add(uid)
-      if (inScope.size >= MIN_ENTITY_DEGREE) break
-    }
-    if (inScope.size >= MIN_ENTITY_DEGREE) count += 1
-  }
-  return count
-}
-
 export function GraphView() {
   const { lens, setLens, selectedUid, setSelectedUid } = useSpine()
   const map = useEntityMap()
@@ -171,6 +152,27 @@ export function GraphView() {
   useEffect(() => {
     if (pinnedEntity && !hubsById.has(pinnedEntity)) setPinnedEntity(null)
   }, [pinnedEntity, hubsById])
+
+  // The event-pin analog: a pinned dot pushed out of scope — a filter edit, or
+  // unstarring it from its own card under a stars-only filter — cannot keep its
+  // card floating over an undimmed map, which is exactly the state the header
+  // rules out. `EventCard`'s dataset-wide lookup would happily keep rendering
+  // it; the map's contract is narrower than the card's. Gated on `ready`
+  // because before the dataset lands *every* uid is undrawn, and a selection
+  // arriving from the list must survive those frames.
+  useEffect(() => {
+    if (map.ready && selectedUid && !drawnIds.has(eventNodeId(selectedUid))) setSelectedUid(null)
+  }, [map.ready, selectedUid, drawnIds, setSelectedUid])
+
+  // Hover is only ever *written* by pointer events, so a node removed while the
+  // cursor sits on it leaves its id behind with no event coming to correct it.
+  // Cleared here rather than merely guarded in `focused`: a guard alone lets
+  // the id lie dormant and re-activate as a phantom hover — dimming the map to
+  // a neighbourhood the cursor is nowhere near — the moment a lens switch back
+  // redraws that node.
+  useEffect(() => {
+    if (hovered && !drawnIds.has(hovered)) setHovered(null)
+  }, [hovered, drawnIds])
 
   const pinEntity = useCallback(
     (id: string) => {
@@ -213,14 +215,12 @@ export function GraphView() {
   /**
    * Hover overrides the pin and reverts on mouse-out — the comparison loop.
    *
-   * Both candidates are checked against what is actually drawn, and that check
-   * is load-bearing rather than defensive. Neither id is guaranteed to survive a
-   * data change: `hovered` is only ever cleared by a later `onNodeHover`, so a
-   * node removed while the cursor sits on it leaves its id behind with no
-   * pointer event coming to correct it; and `selectedUid` is spine state that a
-   * filter edit can push out of scope entirely. An unresolvable focus makes
-   * `lit` a one-element set that matches nothing, which paints *every* node at
-   * `DIM_ALPHA` — a map that goes black for no visible reason.
+   * Both candidates are checked against what is actually drawn. The cleanup
+   * effects above clear a stale hover or selection, but effects run *after* the
+   * render that removed the node — without this check that one frame paints an
+   * unresolvable focus, which makes `lit` a one-element set matching nothing
+   * and dims *every* node to `DIM_ALPHA`: a map that flashes black for no
+   * visible reason.
    */
   const focused = useMemo(() => {
     if (hovered && drawnIds.has(hovered)) return hovered
@@ -237,7 +237,7 @@ export function GraphView() {
     if (!pinnedEntity) return []
     const out: string[] = []
     for (const link of map.links) {
-      if (link.target === pinnedEntity) out.push(link.source.replace(/^event:/, ''))
+      if (link.target === pinnedEntity) out.push(eventUidOf(link.source))
     }
     return out
   }, [pinnedEntity, map.links])
@@ -258,24 +258,55 @@ export function GraphView() {
     if (cached.nodesChanged) refitArmed.current = true
   }, [cached])
 
-  /** Cleared on unmount: the clamp fires 650ms after the fit, and switching
-   *  views inside that window would otherwise call `zoom()` on a torn-down
-   *  canvas. */
-  const clampTimer = useRef<number | undefined>(undefined)
-  useEffect(() => () => window.clearTimeout(clampTimer.current), [])
+  // An arm that outlives its cause is a bug: filter edit arms, user switches
+  // lens before the settle finishes, and the *reorganization's* engine stop
+  // would consume the stale arm — yanking the viewport mid-transition, the one
+  // thing R3 forbids. The lens switch is a statement about what the user is
+  // now watching, so it cancels whatever re-fit an earlier scope change owed.
+  // Declared after the arming effect so that on any render doing both (there
+  // isn't one today), the disarm wins.
+  useEffect(() => {
+    refitArmed.current = false
+  }, [lens])
 
+  /**
+   * The fit is computed here rather than delegated to `zoomToFit`, for one
+   * reason: the ceiling. `zoomToFit` on a near-zero-area scope — two clustered
+   * dots — animates to an effectively unbounded magnification, and a clamp
+   * applied *afterwards* means a second of full-pane discs before the map
+   * shrinks back (and a timer that could just as well yank back a wheel-zoom
+   * the user made in that window). Capping the target before animating is the
+   * whole difference; the box-fit arithmetic is otherwise exactly what
+   * `zoomToFit(600, 90)` did.
+   */
   const handleEngineStop = useCallback(() => {
     if (!refitArmed.current) return
     refitArmed.current = false
     const view = engine.current
     if (!view || nodes.length === 0) return
-    view.zoomToFit(600, 90)
-    // Applied after the fit animation, otherwise the fit overwrites it.
-    window.clearTimeout(clampTimer.current)
-    clampTimer.current = window.setTimeout(() => {
-      if (engine.current && engine.current.zoom() > MAX_ZOOM) engine.current.zoom(MAX_ZOOM, 300)
-    }, 650)
-  }, [nodes.length])
+
+    let minX = Infinity
+    let maxX = -Infinity
+    let minY = Infinity
+    let maxY = -Infinity
+    for (const node of nodes) {
+      if (node.x === undefined || node.y === undefined) continue
+      if (node.x < minX) minX = node.x
+      if (node.x > maxX) maxX = node.x
+      if (node.y < minY) minY = node.y
+      if (node.y > maxY) maxY = node.y
+    }
+    if (minX === Infinity) return
+
+    const PADDING = 90
+    const zoom = Math.min(
+      MAX_ZOOM,
+      Math.max(0.05, (size.width - PADDING * 2) / Math.max(1, maxX - minX)),
+      Math.max(0.05, (size.height - PADDING * 2) / Math.max(1, maxY - minY)),
+    )
+    view.centerAt((minX + maxX) / 2, (minY + maxY) / 2, 600)
+    view.zoom(zoom, 600)
+  }, [nodes, size.width, size.height])
 
   /**
    * Forces are re-tuned whenever the drawn set changes: charge has to weaken as
@@ -290,23 +321,31 @@ export function GraphView() {
    * all, which is R5 silently not shipping.
    */
   const canvasMounted = size.width > 0 && map.events.length > 0
+  // Keyed on the *count*, not the array: everything tuned here is a function of
+  // how many nodes there are, and the simulation re-initializes the registered
+  // forces itself whenever the drawn population changes. Keying on the array
+  // would re-register the halo on every star toggle — the nodes array is
+  // rebuilt each pass even when no node entered or left — which is O(n) d3
+  // re-initialization per click at whole-corpus scope, for values that cannot
+  // have moved.
+  const nodeCount = nodes.length
   useEffect(() => {
     const view = engine.current
     if (!view) return
-    const dense = nodes.length > DENSE_NODE_COUNT
+    const dense = nodeCount > DENSE_NODE_COUNT
     view.d3Force('charge')?.strength(dense ? -14 : -40)
     view.d3Force('link')?.distance(dense ? 14 : 26)
 
     // Radius grows with the core so the halo clears it at every scale rather
     // than being swallowed by a large map or flung away from a small one.
-    const radius = 140 + Math.sqrt(nodes.length) * 9
+    const radius = 140 + Math.sqrt(nodeCount) * 9
     view.d3Force(
       'halo',
       forceRadial<GraphNodeObject>(radius, 0, 0).strength((node) =>
         node.model.kind === 'event' && node.model.fringe ? HALO_STRENGTH : 0,
       ),
     )
-  }, [nodes, canvasMounted])
+  }, [nodeCount, canvasMounted])
 
   const paint = useCallback(
     (node: GraphNodeObject, ctx: CanvasRenderingContext2D, scale: number) => {
@@ -355,17 +394,26 @@ export function GraphView() {
     [pinEntity, pinEvent],
   )
 
+  // The all-fringe state: a drawn scope in which the current lens found no
+  // hubs. Suppressed while the enrichment chunk is still loading — in that
+  // window the people/IP indexes are *empty*, not measured, and "nothing in
+  // this scope shares one" would be an assertion about data that has not
+  // arrived (the loading marker below already narrates that state). Hubs
+  // appearing seconds after the overlay swore there were none is exactly the
+  // misinformation this gate exists to prevent.
+  const allFringe = map.indexReady && map.hubCount === 0 && map.events.length > 0
+
   // Which lenses would draw hubs over this same scope — the all-fringe state's
   // way out, and the replacement for the deleted per-seed degree hint.
   const scopeSet = useMemo(() => new Set(map.scopeUids), [map.scopeUids])
   const lensesWithHubs = useMemo(() => {
-    if (map.hubCount > 0 || map.events.length === 0) return []
+    if (!allFringe) return []
     return [...map.indexes.entries()]
       .filter(([id]) => id !== lens)
-      .map(([id, index]) => ({ lens: id, hubs: hubCountFor(index, scopeSet) }))
+      .map(([id, index]) => ({ lens: id, hubs: hubCount(index, scopeSet) }))
       .filter((entry) => entry.hubs > 0)
       .sort((a, b) => b.hubs - a.hubs)
-  }, [map.hubCount, map.events.length, map.indexes, lens, scopeSet])
+  }, [allFringe, map.indexes, lens, scopeSet])
 
   if (!map.ready) {
     return <Centered>Loading the schedule…</Centered>
@@ -442,23 +490,33 @@ export function GraphView() {
           />
         ) : null}
 
-        {lensesWithHubs.length > 0 ? (
+        {allFringe ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-8 flex justify-center">
             <div className="pointer-events-auto max-w-[420px] rounded-lg border border-line bg-ground-850/95 px-3.5 py-2.5 text-center text-[12px] leading-relaxed text-ink-dim backdrop-blur">
               No {LENS_LABEL(lens)} hubs here — nothing in this scope shares one.{' '}
-              {lensesWithHubs.slice(0, 2).map((entry, i) => (
-                <span key={entry.lens}>
-                  {i > 0 ? ', ' : ''}
-                  <button
-                    type="button"
-                    onClick={() => setLens(entry.lens)}
-                    className="text-lumen underline-offset-2 hover:underline"
-                  >
-                    {LENS_LABEL(entry.lens)} has {entry.hubs}
-                  </button>
-                </span>
-              ))}
-              .
+              {lensesWithHubs.length > 0 ? (
+                <>
+                  {lensesWithHubs.slice(0, 2).map((entry, i) => (
+                    <span key={entry.lens}>
+                      {i > 0 ? ', ' : ''}
+                      <button
+                        type="button"
+                        onClick={() => setLens(entry.lens)}
+                        className="text-lumen underline-offset-2 hover:underline"
+                      >
+                        {LENS_LABEL(entry.lens)} has {entry.hubs}
+                      </button>
+                    </span>
+                  ))}
+                  .
+                </>
+              ) : (
+                // A narrow filter routinely leaves a scope no lens can connect.
+                // Saying so is the difference between "the map is broken" and
+                // "these events genuinely share nothing" — the overlay must not
+                // simply vanish and leave scattered dim dots unexplained.
+                'No other lens connects these events either.'
+              )}
             </div>
           </div>
         ) : null}

@@ -175,6 +175,23 @@ describe('row interaction (AE3)', () => {
     })
     expect(onSelectEvent).toHaveBeenCalledWith('morning')
   })
+
+  it('leaves keyboard activation of the star to the star', async () => {
+    const onSelectEvent = vi.fn()
+    await mountCard(['morning'], { onSelectEvent })
+    const star = await screen.findByRole('button', { name: 'Star Inking Techniques Workshop' })
+
+    // Enter and Space on a focused <button> bubble to the row. The row's
+    // handler must neither claim them as a re-pin nor preventDefault them —
+    // preventDefault on a bubbled keydown cancels the button's *native*
+    // activation, which made starring from the keyboard impossible.
+    // (fireEvent returns false when default was prevented; jsdom does not
+    // perform the native keyboard-to-click activation itself, so the
+    // not-prevented bit is the whole contract assertable here.)
+    expect(fireEvent.keyDown(star, { key: 'Enter' })).toBe(true)
+    expect(fireEvent.keyDown(star, { key: ' ' })).toBe(true)
+    expect(onSelectEvent).not.toHaveBeenCalled()
+  })
 })
 
 describe('dismissal', () => {

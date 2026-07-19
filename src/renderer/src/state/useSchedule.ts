@@ -9,6 +9,15 @@
  * The memo layers are ordered by what invalidates them. Classifying and
  * faceting 3,474 events is the expensive step, and it depends on the dataset
  * alone — so starring an event or typing in the search box does not redo it.
+ *
+ * Layer 1 is additionally shared *across hook instances* through a module-level
+ * cache keyed on the events array. The sidebar, the list, and the entity map
+ * each mount their own `useSchedule`, and per-instance memos would run the
+ * corpus pass once per mount and again per instance on every dataset swap. The
+ * pass is pure — events in, derived maps out — so instances sharing one result
+ * is invisible except in the profiler. Keyed by the array's identity (a
+ * WeakMap, so a replaced dataset frees the old derivation), which is the same
+ * signal the memo used.
  */
 
 import { useMemo } from 'react'
@@ -67,34 +76,65 @@ export interface ScheduleModel {
   relaxations: Relaxation[]
 }
 
+interface ScheduleBase {
+  classes: Map<string, EventClassification>
+  facetsByUid: Map<string, EventFacets>
+  candidates: FilterCandidate[]
+  byUid: Map<string, ScheduleEvent>
+  dayByUid: Map<string, string | null>
+  liveUids: Set<string>
+}
+
+/** One entry per live dataset — in practice one, briefly two across a swap. */
+const baseCache = new WeakMap<readonly ScheduleEvent[], ScheduleBase>()
+
+/** Stable stand-in for "no dataset yet", so pre-load renders across all
+ *  instances share the one empty derivation instead of each building theirs. */
+const NO_EVENTS: readonly ScheduleEvent[] = []
+
+function deriveBase(list: readonly ScheduleEvent[]): ScheduleBase {
+  const cached = baseCache.get(list)
+  if (cached) return cached
+
+  const classes = classifyAll(list)
+  const facetsByUid = new Map<string, EventFacets>()
+  const candidates: FilterCandidate[] = []
+  const byUid = new Map<string, ScheduleEvent>()
+  const dayByUid = new Map<string, string | null>()
+
+  for (const event of list) {
+    const classification = classes.get(event.uid)
+    const facets = applyFacets(event, FACET_MAP, {
+      durationMinutes: classification?.durationMinutes ?? null,
+    })
+    facetsByUid.set(event.uid, facets)
+    byUid.set(event.uid, event)
+    dayByUid.set(event.uid, facets.computed.day)
+    candidates.push(buildCandidate({ event, facets, classification }))
+  }
+
+  const base: ScheduleBase = {
+    classes,
+    facetsByUid,
+    candidates,
+    byUid,
+    dayByUid,
+    liveUids: new Set(byUid.keys()),
+  }
+  baseCache.set(list, base)
+  return base
+}
+
 export function useSchedule(): ScheduleModel {
   const { dataset, filter, stars, activeDay } = useSpine()
 
   const events = dataset?.events
   const changes = dataset?.changes
 
-  // Layer 1 — dataset only. The expensive pass.
-  const base = useMemo(() => {
-    const list = events ?? []
-    const classes = classifyAll(list)
-    const facetsByUid = new Map<string, EventFacets>()
-    const candidates: FilterCandidate[] = []
-    const byUid = new Map<string, ScheduleEvent>()
-    const dayByUid = new Map<string, string | null>()
-
-    for (const event of list) {
-      const classification = classes.get(event.uid)
-      const facets = applyFacets(event, FACET_MAP, {
-        durationMinutes: classification?.durationMinutes ?? null,
-      })
-      facetsByUid.set(event.uid, facets)
-      byUid.set(event.uid, event)
-      dayByUid.set(event.uid, facets.computed.day)
-      candidates.push(buildCandidate({ event, facets, classification }))
-    }
-
-    return { classes, facetsByUid, candidates, byUid, dayByUid, liveUids: new Set(byUid.keys()) }
-  }, [events])
+  // Layer 1 — dataset only. The expensive pass, shared across instances; the
+  // memo is only here so *this* instance re-reads the cache exactly when its
+  // events identity moves.
+  const base = useMemo(() => deriveBase(events ?? NO_EVENTS), [events])
 
   // Layer 2 — star and change membership. Rebuilt on a star click, but only
   // two Sets, so the click stays instant at corpus scale.
