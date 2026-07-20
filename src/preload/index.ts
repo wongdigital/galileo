@@ -3,6 +3,7 @@ import type {
   ChatRequest,
   ChatResponse,
   KeyStatus,
+  ModelChoice,
   ProviderId,
 } from '../shared/chat'
 import type { FilterCandidate } from '../shared/filter/types'
@@ -39,6 +40,10 @@ const api = {
       ipcRenderer.invoke('llm:key:set', { provider, key }),
     clearKey: (provider: ProviderId): Promise<KeyStatus> =>
       ipcRenderer.invoke('llm:key:clear', { provider }),
+    /** Live model catalogue. OpenRouter needs no key; Anthropic and OpenAI
+     *  return [] until their key is stored. */
+    models: (provider: ProviderId): Promise<ModelChoice[]> =>
+      ipcRenderer.invoke('llm:models', provider),
     /** Push the current candidate index so the tool loop grounds counts and
      *  searches in main; called when the identity-stable array changes. */
     syncDataset: (candidates: readonly FilterCandidate[]): Promise<{ received: number }> =>

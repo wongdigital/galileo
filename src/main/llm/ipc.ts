@@ -12,6 +12,7 @@
  */
 
 import { runChatTurn } from './loop'
+import { listModels } from './models'
 import type { KeyStore } from './keyStore'
 import type { ChatRequest, ProviderId } from '../../shared/chat'
 import type { FilterCandidate } from '../../shared/filter/types'
@@ -44,6 +45,12 @@ export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
   ipcMain.handle('llm:key:clear', (_event, ...args: unknown[]) => {
     const { provider } = (args[0] ?? {}) as { provider: ProviderId }
     return deps.keyStore.clear(provider)
+  })
+
+  ipcMain.handle('llm:models', (_event, ...args: unknown[]) => {
+    const provider = args[0] as ProviderId
+    // OpenRouter lists publicly; the other two need the stored key.
+    return listModels(provider, deps.keyStore.get(provider) ?? undefined)
   })
 
   ipcMain.handle('llm:dataset:sync', (_event, ...args: unknown[]) => {

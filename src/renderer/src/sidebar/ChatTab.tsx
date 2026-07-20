@@ -19,7 +19,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
 import { dayLabel, formatTime, localParts } from '@renderer/state/derive'
-import { PROVIDERS, type ChatMessage, type KeyStatus, type ProposedAction, type ProviderId } from '@shared/chat'
+import {
+  PROVIDERS,
+  type ChatMessage,
+  type KeyStatus,
+  type ModelChoice,
+  type ProposedAction,
+  type ProviderId,
+} from '@shared/chat'
 
 const PROVIDER_LABEL: Record<ProviderId, string> = {
   anthropic: 'Anthropic',
@@ -27,16 +34,11 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   openrouter: 'OpenRouter',
 }
 
-/** Curated model choices per provider — a dropdown, plus a Custom escape hatch
- *  for anything not listed. OpenRouter slugs are namespaced by their upstream
- *  provider, so they read "OpenAI: GPT-5.6 Luna". The first entry is the
- *  default. Any id can be overridden via Custom, so a stale list never traps
- *  a user on a retired model. */
-interface ModelChoice {
-  id: string
-  label: string
-}
-
+/** Curated fallback model choices per provider, used until the live catalogue
+ *  loads (or when it can't — no key, offline). A dropdown plus a Custom escape
+ *  hatch, so a stale list never traps a user on a retired model. OpenRouter
+ *  slugs are namespaced by their upstream provider, so they read
+ *  "OpenAI: GPT-5.6 Luna". The first entry is the default. */
 const MODELS: Record<ProviderId, ModelChoice[]> = {
   anthropic: [
     { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
@@ -112,6 +114,7 @@ export function ChatTab() {
   const [keyStatus, setKeyStatus] = useState<KeyStatus | null>(null)
   const [provider, setProvider] = useState<ProviderId>('anthropic')
   const [models, setModels] = useState<Record<ProviderId, string>>(defaultModels)
+  const [liveModels, setLiveModels] = useState<Partial<Record<ProviderId, ModelChoice[]>>>({})
   const [setupOpen, setSetupOpen] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -149,6 +152,22 @@ export function ChatTab() {
   }, [entries])
 
   const hasAnyKey = keyStatus ? PROVIDERS.some((p) => keyStatus[p]) : false
+
+  // Pull the live catalogue for a provider — OpenRouter always, the other two
+  // once their key exists (their /models endpoint needs it). A miss leaves the
+  // curated fallback in place.
+  const refreshModels = useCallback(async (target: ProviderId) => {
+    const api = bridge()
+    if (!api) return
+    const list = await api.models(target)
+    if (list.length > 0) setLiveModels((prev) => ({ ...prev, [target]: list }))
+  }, [])
+
+  useEffect(() => {
+    if (provider === 'openrouter' || keyStatus?.[provider]) void refreshModels(provider)
+  }, [provider, keyStatus, refreshModels])
+
+  const modelChoices = liveModels[provider] ?? MODELS[provider]
 
   const setModelFor = useCallback((target: ProviderId, id: string) => {
     setModels((prev) => {
@@ -252,10 +271,16 @@ export function ChatTab() {
           <KeySetup
             keyStatus={keyStatus}
             provider={provider}
-            models={models}
+            selectedModel={models[provider]}
+            modelChoices={modelChoices}
             onProviderChange={setProvider}
             onModelChange={setModelFor}
-            onStatus={setKeyStatus}
+            onRefreshModels={() => void refreshModels(provider)}
+            onStatus={(status) => {
+              setKeyStatus(status)
+              // A freshly saved key unlocks that provider's live catalogue.
+              void refreshModels(provider)
+            }}
             onDone={() => setSetupOpen(false)}
           />
         ) : entries.length === 0 ? (
@@ -456,17 +481,21 @@ function ActionCard({
 function KeySetup({
   keyStatus,
   provider,
-  models,
+  selectedModel,
+  modelChoices,
   onProviderChange,
   onModelChange,
+  onRefreshModels,
   onStatus,
   onDone,
 }: {
   keyStatus: KeyStatus | null
   provider: ProviderId
-  models: Record<ProviderId, string>
+  selectedModel: string
+  modelChoices: ModelChoice[]
   onProviderChange: (provider: ProviderId) => void
   onModelChange: (provider: ProviderId, id: string) => void
+  onRefreshModels: () => void
   onStatus: (status: KeyStatus) => void
   onDone: () => void
 }) {
@@ -476,32 +505,31 @@ function KeySetup({
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
 
-  const selectedModel = models[provider]
-  const modelList = MODELS[provider]
-  const isCustomModel = !modelList.some((m) => m.id === selectedModel)
+  const isCustomModel = !modelChoices.some((m) => m.id === selectedModel)
 
   const save = async () => {
-    const api = bridge()
-    if (!api) return
     setBusy(true)
     setNote(null)
     try {
-      let status: KeyStatus | null = null
-      let failure: string | null = null
-      for (const p of PROVIDERS) {
-        const draft = draftKeys[p]?.trim()
-        if (!draft) continue
-        const result = await api.setKey(p, draft)
-        if (result.ok) status = result.status
-        else failure = result.message
+      const api = bridge()
+      if (api) {
+        let status: KeyStatus | null = null
+        let failure: string | null = null
+        for (const p of PROVIDERS) {
+          const draft = draftKeys[p]?.trim()
+          if (!draft) continue
+          const result = await api.setKey(p, draft)
+          if (result.ok) status = result.status
+          else failure = result.message
+        }
+        // A rejected key keeps setup open so it can be fixed; anything else
+        // (including a model-only change, or no bridge at all) closes.
+        if (failure) {
+          setNote(failure)
+          return
+        }
+        if (status) onStatus(status)
       }
-      if (failure) {
-        setNote(failure)
-        return
-      }
-      if (status) onStatus(status)
-      // Save even if no new key was typed — the user may have only changed the
-      // model — and return to the chat.
       onDone()
     } finally {
       setBusy(false)
@@ -544,7 +572,17 @@ function KeySetup({
       </label>
 
       <label className="flex flex-col gap-1">
-        <span className="text-[11px] text-ink-faint">Model</span>
+        <span className="flex items-center gap-2 text-[11px] text-ink-faint">
+          Model
+          <button
+            type="button"
+            onClick={onRefreshModels}
+            title="Refresh the model list from the provider"
+            className="text-ink-fringe transition-colors duration-150 hover:text-lumen"
+          >
+            ↻
+          </button>
+        </span>
         <select
           value={isCustomModel ? 'custom' : selectedModel}
           onChange={(e) => {
@@ -553,7 +591,7 @@ function KeySetup({
           }}
           className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12.5px] text-ink focus:border-lumen-dim focus:outline-none"
         >
-          {modelList.map((m) => (
+          {modelChoices.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
             </option>

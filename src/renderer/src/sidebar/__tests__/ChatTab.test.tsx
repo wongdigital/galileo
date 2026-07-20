@@ -79,6 +79,7 @@ beforeEach(() => {
       keyStatus: vi.fn(() => Promise.resolve(keyStatus)),
       setKey,
       clearKey: vi.fn(() => Promise.resolve(keyStatus)),
+      models: vi.fn(() => Promise.resolve([])),
       syncDataset,
       chat,
     },

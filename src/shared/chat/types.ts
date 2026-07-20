@@ -23,6 +23,13 @@ export type ProviderId = 'anthropic' | 'openai' | 'openrouter'
 
 export const PROVIDERS: readonly ProviderId[] = ['anthropic', 'openai', 'openrouter']
 
+/** A model the user can pick. `label` is a display name ("Claude Sonnet 5",
+ *  "OpenAI: GPT-5.6 Luna"); `id` is the exact string passed to the provider. */
+export interface ModelChoice {
+  id: string
+  label: string
+}
+
 /** Mirrors the spine's `ViewMode` (renderer-owned). Duplicated as a two-value
  *  literal rather than imported so shared never reaches into the renderer; the
  *  renderer maps this straight onto `setView`. */
