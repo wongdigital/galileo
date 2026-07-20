@@ -15,7 +15,7 @@ engine, and no `ResizeObserver`. So the honest position is that the *rendering* 
 against live data and always will be.
 
 The trap is concluding that the view is therefore untestable. It is not. Everything around the
-canvas — what mounts, what pins, what dismisses, whether exactly one card is open — is ordinary
+canvas—what mounts, what pins, what dismisses, whether exactly one card is open—is ordinary
 React that breaks in ordinary ways, and "the graph tab throws" is not something to discover at
 the con.
 
@@ -39,8 +39,8 @@ function sizeTheDom(): void {
 }
 ```
 
-The virtualized list needs the same treatment for a different reason — it measures
-`clientHeight` — so the schedule suite stubs `HTMLElement.prototype` metrics instead.
+The virtualized list needs the same treatment for a different reason—it measures
+`clientHeight`—so the schedule suite stubs `HTMLElement.prototype` metrics instead.
 
 **2. Stub the force graph as buttons, not as a blank div.**
 
@@ -61,16 +61,16 @@ vi.mock('react-force-graph-2d', () => ({
 ```
 
 This is deliberately **not** a fake force layout. It has no positions, and nothing asserted
-through it may depend on any — that boundary is what keeps the stub from quietly becoming a
+through it may depend on any—that boundary is what keeps the stub from quietly becoming a
 second implementation to maintain.
 
-**3. Mock `@data/enrichment.json` — and keep fixture descriptions empty.**
+**3. Mock `@data/enrichment.json`—and keep fixture descriptions empty.**
 
 The real file is ~1.2 MB and has no business in a suite. The synthetic replacement has one
 non-obvious constraint: **the enrichment index drops any entry whose `description_hash`
 disagrees with the event's current description.** Give a fixture event prose without
 recomputing its hash and the entry is treated as stale, its people and franchises vanish, and
-the map builds with no hubs — which presents as a confusing assertion failure several layers
+the map builds with no hubs—which presents as a confusing assertion failure several layers
 from the cause. Fixture descriptions stay `''`, and every entry carries the hash of the empty
 string.
 
@@ -78,7 +78,7 @@ string.
 
 Identify cards by their close control (`Close event card`), not by their contents. Titles
 appear in entity-card rows and node tooltips too, so `getByText('Panel One')` is ambiguous the
-moment a second surface renders the same event — which is the whole point of a shared card.
+moment a second surface renders the same event—which is the whole point of a shared card.
 
 Where a readout is assembled from several interpolated values, give it a `data-testid` and
 assert on `textContent`. `getByText(/3 events/)` fails on text split across nodes, in a way
@@ -94,4 +94,4 @@ pass as a requirement and break on the next.
 
 - `src/renderer/src/views/graph/__tests__/GraphView.test.tsx`
 - `src/renderer/src/views/schedule/__tests__/ScheduleView.test.tsx`
-- `8fa6443` — the canvas-mount regression the size stub exists to catch.
+- `8fa6443`—the canvas-mount regression the size stub exists to catch.

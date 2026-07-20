@@ -1,12 +1,12 @@
 ---
-title: "Sched UIDs survive edits — UID is the identity key"
+title: "Sched UIDs survive edits—UID is the identity key"
 type: decision
 date: 2026-07-18
 unit: U3
 requirements: [R4, R11]
 ---
 
-# Sched UIDs survive edits — UID is the identity key
+# Sched UIDs survive edits—UID is the identity key
 
 ## The question
 
@@ -14,7 +14,7 @@ The plan (`docs/plans/2026-07-17-001-feat-relatedness-graph-app-plan.md`, U3 exe
 gated the whole data layer on one unknown: **does Sched regenerate an event's UID when the
 event is edited?**
 
-Five subsystems key identity to UID — the star store, the snapshot diff, the unseen-change
+Five subsystems key identity to UID—the star store, the snapshot diff, the unseen-change
 log, the graph's node-object cache, and exported ICS UIDs. If UIDs churned on edit, every one
 of them would silently lose track of an event the moment a panel moved rooms, and the fallback
 key would have to be the list-view `shortId`.
@@ -38,7 +38,7 @@ Nine events were genuinely edited in the window (4 title changes, 8 description 
 **every one kept its UID**. That is direct positive evidence, not just absence of churn.
 
 **Decision: UID remains the identity key across all five subsystems.** `shortId` is a viable
-backup — it was also stable, unique, and present on all 3,474 events — but nothing requires
+backup—it was also stable, unique, and present on all 3,474 events—but nothing requires
 switching.
 
 ## Two findings that validate other plan decisions
@@ -50,13 +50,13 @@ the plan's *snapshot-and-diff is the change engine* decision: if the app trusted
 those nine edits would have been invisible.
 
 **2. Events vanish without a CANCELLED flag.** Two events left the feed entirely and neither
-was flagged cancelled first — they were simply gone. This is exactly the failure class the
+was flagged cancelled first—they were simply gone. This is exactly the failure class the
 ghost-star design exists to catch (R11): a bare-UID star would have silently evaporated. The
 star record's snapshot fields (title/start/room/starredAt) are what let a vanished event render
 as a visible ghost instead of nothing.
 
 ## How to re-run
 
-The check script is disposable — regenerate it from this doc's method if the question comes
+The check script is disposable—regenerate it from this doc's method if the question comes
 back (e.g. for a different con year, where Sched's behavior is unverified). Preserve a snapshot
 of `data/events.json` before a refetch, then compare old vs new on the churn signature above.
