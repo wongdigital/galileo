@@ -108,6 +108,15 @@ export interface ProposedAction {
   note?: string
 }
 
+/** A streamed increment of an assistant turn: output text as the model writes
+ *  it, or a status label for what it is doing between tool calls ("Searching…").
+ *  Deltas arrive on a push channel; the final ChatTurn still comes back from the
+ *  chat call itself and carries the canonical text plus the patch/cards/action. */
+export interface ChatDelta {
+  text?: string
+  status?: string
+}
+
 /** The whole result of one user turn, handed back across the bridge. */
 export interface ChatTurn {
   message: ChatMessage

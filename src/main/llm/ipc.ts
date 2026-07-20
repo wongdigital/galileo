@@ -65,12 +65,14 @@ export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
     return { received: candidates.length }
   })
 
-  ipcMain.handle('llm:chat', async (_event, ...args: unknown[]) => {
+  ipcMain.handle('llm:chat', async (event, ...args: unknown[]) => {
     // One turn in flight per window; a new send supersedes any prior straggler.
     inflight?.abort(new Error('superseded'))
     const controller = new AbortController()
     inflight = controller
     const timeout = setTimeout(() => controller.abort(new Error('timeout')), CHAT_TIMEOUT_MS)
+    // Stream text/status back to the sender as it happens.
+    const sender = (event as { sender?: { send(channel: string, ...payload: unknown[]): void } }).sender
     try {
       return await runChatTurn(
         {
@@ -78,6 +80,7 @@ export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
           getEvents: deps.getEvents,
           getCandidates: () => candidates,
           signal: controller.signal,
+          onDelta: sender ? (delta) => sender.send('llm:chat:delta', delta) : undefined,
         },
         args[0] as ChatRequest,
       )

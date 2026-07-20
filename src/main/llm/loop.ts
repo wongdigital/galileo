@@ -8,13 +8,25 @@
  * capture-and-assemble path is exercised without a provider or a key.
  */
 
-import { generateText, stepCountIs, type LanguageModel, type ModelMessage } from 'ai'
+import { stepCountIs, streamText, type LanguageModel, type ModelMessage } from 'ai'
 import { languageModel } from './providers'
 import { SYSTEM_PROMPT } from './systemPrompt'
 import { buildTools, type ChatTools, type ToolContext, type TurnCapture } from './tools'
 import type { FilterCandidate, MatchContext } from '../../shared/filter/types'
-import type { ChatError, ChatRequest, ChatResponse } from '../../shared/chat'
+import type { ChatDelta, ChatError, ChatRequest, ChatResponse } from '../../shared/chat'
 import type { ScheduleEvent } from '../../shared/schedule'
+
+/** What the model is doing between tool calls, phrased for the user. Streamed as
+ *  a status delta so the wait for the first token is never dead air. */
+const TOOL_STATUS: Record<string, string> = {
+  apply_filters: 'Filtering the schedule…',
+  search_events: 'Searching the schedule…',
+  list_facet_values: 'Checking the schedule…',
+  get_event: 'Reading the details…',
+  get_starred: 'Checking your stars…',
+  set_view: 'Switching the view…',
+  propose_action: 'Preparing that…',
+}
 
 /** How many tool rounds the model gets before it must answer. Enough for a
  *  real chain — search, read, then propose or filter — with headroom for a
@@ -27,12 +39,14 @@ export interface GenerateArgs {
   messages: ModelMessage[]
   tools: ChatTools
   signal?: AbortSignal
+  /** Streamed output text and between-tool status, as they happen. */
+  onDelta?: (delta: ChatDelta) => void
 }
 
 export type GenerateFn = (args: GenerateArgs) => Promise<{ text: string }>
 
-const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, signal }) => {
-  const result = await generateText({
+const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, signal, onDelta }) => {
+  const first = streamText({
     model,
     system,
     messages,
@@ -40,18 +54,27 @@ const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, sig
     stopWhen: stepCountIs(MAX_STEPS),
     abortSignal: signal,
   })
-  if (result.text.trim()) return { text: result.text }
+  for await (const part of first.fullStream) {
+    if (part.type === 'text-delta') onDelta?.({ text: part.text })
+    else if (part.type === 'tool-call') onDelta?.({ status: TOOL_STATUS[part.toolName] ?? 'Working…' })
+  }
+  const text = await first.text
+  if (text.trim()) return { text }
 
-  // The model stopped on a tool call without a written reply (it hit the step
-  // cap, or just declined to summarize). Force one final answer from everything
-  // it gathered, tools withheld, so the user never gets silence.
-  const summary = await generateText({
+  // The model stopped on a tool call without a written reply (step cap, or it
+  // just declined to summarize). Force one final answer from everything it
+  // gathered, tools withheld, streamed too, so the user never gets silence.
+  const gathered = await first.response
+  const summary = streamText({
     model,
     system,
-    messages: [...messages, ...result.response.messages],
+    messages: [...messages, ...gathered.messages],
     abortSignal: signal,
   })
-  return { text: summary.text }
+  for await (const part of summary.fullStream) {
+    if (part.type === 'text-delta') onDelta?.({ text: part.text })
+  }
+  return { text: await summary.text }
 }
 
 export interface ChatDeps {
@@ -60,7 +83,9 @@ export interface ChatDeps {
   getCandidates: () => readonly FilterCandidate[]
   /** Aborts the in-flight model call — the Stop button, and the timeout. */
   signal?: AbortSignal
-  /** Injected in tests; production uses AI SDK generateText. */
+  /** Streamed text/status forwarded to the renderer over a push channel. */
+  onDelta?: (delta: ChatDelta) => void
+  /** Injected in tests; production uses AI SDK streamText. */
   generate?: GenerateFn
 }
 
@@ -112,7 +137,7 @@ export async function runChatTurn(deps: ChatDeps, request: ChatRequest): Promise
 
   const generate = deps.generate ?? defaultGenerate
   try {
-    const { text } = await generate({ model, system: SYSTEM_PROMPT, messages, tools, signal: deps.signal })
+    const { text } = await generate({ model, system: SYSTEM_PROMPT, messages, tools, signal: deps.signal, onDelta: deps.onDelta })
     return {
       ok: true,
       turn: {

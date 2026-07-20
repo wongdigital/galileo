@@ -93,6 +93,10 @@ interface ChatEntry {
   eventUids?: string[]
   proposedAction?: ProposedAction
   actionState?: 'pending' | 'done' | 'cancelled'
+  /** True while text is still streaming in; `status` is the between-tool label
+   *  shown until the first token arrives. */
+  streaming?: boolean
+  status?: string
 }
 
 function whenLabel(iso: string | null): string {
@@ -197,10 +201,32 @@ export function ChatTab() {
     }
 
     const history: ChatMessage[] = [...entries.map((e) => e.message), { role: 'user', content: text }]
-    setEntries((prev) => [...prev, { message: { role: 'user', content: text } }])
+    // The user message, and an empty assistant placeholder that streams in.
+    setEntries((prev) => [
+      ...prev,
+      { message: { role: 'user', content: text } },
+      { message: { role: 'assistant', content: '' }, streaming: true, status: 'Thinking…' },
+    ])
     setInput('')
     setSending(true)
     setError(null)
+
+    // Append streamed text/status to the trailing streaming placeholder.
+    const unsubscribe =
+      api.onChatDelta?.((delta) => {
+        setEntries((prev) => {
+          const i = prev.length - 1
+          const last = prev[i]
+          if (!last?.streaming) return prev
+          const next = [...prev]
+          if (delta.text) {
+            next[i] = { ...last, message: { ...last.message, content: last.message.content + delta.text }, status: undefined }
+          } else if (delta.status) {
+            next[i] = { ...last, status: delta.status }
+          }
+          return next
+        })
+      }) ?? (() => {})
 
     try {
       const response = await api.chat({
@@ -218,9 +244,22 @@ export function ChatTab() {
         // A user Stop is expected, not an error to shout about.
         if (response.error.kind !== 'aborted') {
           setError(response.error.message)
-          // A missing or rejected key sends the user straight to setup.
           if (response.error.kind === 'no-key' || response.error.kind === 'auth') setSetupOpen(true)
         }
+        // Keep a partial answer if the user stopped mid-stream; otherwise drop
+        // the empty placeholder.
+        setEntries((prev) => {
+          const i = prev.length - 1
+          const last = prev[i]
+          if (!last?.streaming) return prev
+          const next = [...prev]
+          if (response.error.kind === 'aborted' && last.message.content.trim()) {
+            next[i] = { ...last, streaming: false, status: undefined }
+          } else {
+            next.splice(i, 1)
+          }
+          return next
+        })
         return
       }
 
@@ -230,23 +269,36 @@ export function ChatTab() {
       if (turn.patch?.lens) spine.setLens(turn.patch.lens)
       if (turn.patch?.view) spine.setView(turn.patch.view)
 
-      setEntries((prev) => [
-        ...prev,
-        {
-          // A model that stopped on a tool call leaves empty text; a blank
-          // bubble reads as a bug, so name what happened instead.
+      // Finalize the placeholder: the returned turn is canonical, falling back
+      // to whatever streamed if it came back empty.
+      setEntries((prev) => {
+        const i = prev.length - 1
+        const last = prev[i]
+        if (!last?.streaming) return prev
+        const next = [...prev]
+        next[i] = {
           message: {
             role: 'assistant',
-            content: turn.message.content.trim() || 'I finished without a reply — try rephrasing.',
+            content: turn.message.content.trim() || last.message.content.trim() || 'I finished without a reply — try rephrasing.',
           },
+          streaming: false,
           eventUids: turn.eventUids.length > 0 ? turn.eventUids : undefined,
           proposedAction: turn.proposedAction,
           actionState: turn.proposedAction ? 'pending' : undefined,
-        },
-      ])
+        }
+        return next
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      setEntries((prev) => {
+        const i = prev.length - 1
+        if (!prev[i]?.streaming) return prev
+        const next = [...prev]
+        next.splice(i, 1)
+        return next
+      })
     } finally {
+      unsubscribe()
       setSending(false)
     }
   }, [input, sending, entries, provider, models, spine])
@@ -319,7 +371,6 @@ export function ChatTab() {
                 onDismiss={() => dismissAction(i)}
               />
             ))}
-            {sending ? <p className="text-[12px] text-ink-faint">Thinking…</p> : null}
           </div>
         )}
       </div>
@@ -443,6 +494,9 @@ function Bubble({
             '[&_h1]:text-[13px] [&_h1]:font-semibold [&_h2]:text-[13px] [&_h2]:font-semibold [&_h3]:font-semibold',
           ].join(' ')}
         >
+          {entry.streaming && !entry.message.content ? (
+            <span className="animate-pulse italic text-ink-faint">{entry.status ?? 'Thinking…'}</span>
+          ) : (
           <Markdown
             components={{
               // Links open in the user's browser, never navigate the app window.
@@ -471,6 +525,7 @@ function Bubble({
           >
             {entry.message.content}
           </Markdown>
+          )}
         </div>
       )}
 

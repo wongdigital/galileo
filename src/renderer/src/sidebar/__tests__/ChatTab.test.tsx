@@ -57,6 +57,7 @@ let keyStatus: KeyStatus
 let chat: ReturnType<typeof vi.fn>
 let syncDataset: ReturnType<typeof vi.fn>
 let setKey: ReturnType<typeof vi.fn>
+let deltaCb: ((d: { text?: string; status?: string }) => void) | null
 
 beforeEach(() => {
   persisted = []
@@ -83,6 +84,12 @@ beforeEach(() => {
       syncDataset,
       chat,
       cancelChat: vi.fn(() => Promise.resolve({ cancelled: true })),
+      onChatDelta: vi.fn((cb: (d: { text?: string; status?: string }) => void) => {
+        deltaCb = cb
+        return () => {
+          deltaCb = null
+        }
+      }),
     },
   }
 })
@@ -199,6 +206,29 @@ describe('ChatTab', () => {
     expect(request.messages.at(-1)).toEqual({ role: 'user', content: 'hello' })
     expect(request.filter).toBeDefined()
     expect(request.lens).toBe('ip')
+  })
+
+  it('streams status then text into the reply bubble', async () => {
+    let settle: (r: import('@shared/chat').ChatResponse) => void = () => {}
+    chat.mockReturnValue(new Promise((resolve) => { settle = resolve }))
+    await mount()
+    await sendMessage('when is the masquerade')
+
+    // Between-tool status shows before any text.
+    await act(async () => deltaCb?.({ status: 'Searching the schedule…' }))
+    expect(screen.getByText('Searching the schedule…')).toBeTruthy()
+
+    // Text streams in and replaces the status.
+    await act(async () => deltaCb?.({ text: 'The Masquerade ' }))
+    await act(async () => deltaCb?.({ text: 'is Saturday.' }))
+    expect(screen.getByText('The Masquerade is Saturday.')).toBeTruthy()
+    expect(screen.queryByText('Searching the schedule…')).toBeNull()
+
+    // The final turn is canonical.
+    await act(async () => {
+      settle({ ok: true, turn: { message: { role: 'assistant', content: 'The Masquerade is Saturday, Jul 25.' }, eventUids: [], toolTrace: [] } })
+    })
+    expect(screen.getByText('The Masquerade is Saturday, Jul 25.')).toBeTruthy()
   })
 
   it('makes a bolded event title in the reply open its card', async () => {

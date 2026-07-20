@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  ChatDelta,
   ChatRequest,
   ChatResponse,
   KeyStatus,
@@ -51,6 +52,13 @@ const api = {
     chat: (request: ChatRequest): Promise<ChatResponse> => ipcRenderer.invoke('llm:chat', request),
     /** Abort the in-flight turn — the Stop button. */
     cancelChat: (): Promise<{ cancelled: boolean }> => ipcRenderer.invoke('llm:chat:cancel'),
+    /** Subscribe to streamed text/status for the in-flight turn. Returns an
+     *  unsubscribe function. */
+    onChatDelta: (cb: (delta: ChatDelta) => void): (() => void) => {
+      const listener = (_event: unknown, delta: ChatDelta): void => cb(delta)
+      ipcRenderer.on('llm:chat:delta', listener)
+      return () => ipcRenderer.removeListener('llm:chat:delta', listener)
+    },
   },
 }
 
