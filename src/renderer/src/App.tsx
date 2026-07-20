@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { SpineProvider, useSpine, type ViewMode } from './state/spine'
 import { useSchedule } from './state/useSchedule'
 import { FiltersTab } from './sidebar/FiltersTab'
+import { ChatTab } from './sidebar/ChatTab'
 import { ScheduleView } from './views/schedule/ScheduleView'
 import { GraphView } from './views/graph/GraphView'
 
@@ -62,6 +64,56 @@ function SelectionReadout() {
   )
 }
 
+type SidebarTab = 'filter' | 'chat'
+
+const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
+  { id: 'chat', label: 'Chat' },
+  { id: 'filter', label: 'Filter' },
+]
+
+/**
+ * The left sidebar's two ways to shape what the views show: the Filter chips
+ * and the Chat concierge. Both write the same spine filter, so switching tabs
+ * never loses what you set in the other (R15).
+ */
+function Sidebar() {
+  const [tab, setTab] = useState<SidebarTab>('filter')
+  return (
+    <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-ground-950">
+      <div className="flex shrink-0 items-center gap-px border-b border-line p-2">
+        {SIDEBAR_TABS.map((t) => {
+          const active = tab === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              aria-pressed={active}
+              className={[
+                'flex-1 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors duration-150',
+                active
+                  ? 'bg-ground-800 text-ink-bright'
+                  : 'text-ink-dim hover:text-ink',
+              ].join(' ')}
+            >
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+      {/* Both mounted; hiding rather than unmounting keeps the chat transcript
+          and the filter's expand state alive across tab switches. */}
+      <div className={tab === 'filter' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+        <FiltersTab />
+      </div>
+      <div className={tab === 'chat' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+        <ChatTab />
+      </div>
+      <SelectionReadout />
+    </aside>
+  )
+}
+
 function Shell() {
   const { view } = useSpine()
   return (
@@ -77,10 +129,7 @@ function Shell() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-ground-950">
-          <FiltersTab />
-          <SelectionReadout />
-        </aside>
+        <Sidebar />
 
         <main className="flex min-w-0 flex-1 flex-col">
           {view === 'schedule' ? <ScheduleView /> : <GraphView />}
