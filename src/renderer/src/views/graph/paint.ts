@@ -62,6 +62,8 @@ export interface Palette {
   inkBright: string
   inkDim: string
   line: string
+  /** Daylight theme active — community hues trade luminosity for pigment. */
+  light: boolean
 }
 
 let cached: Palette | null = null
@@ -96,8 +98,54 @@ export function palette(): Palette {
     inkBright: token('--color-ink-bright'),
     inkDim: token('--color-ink-dim'),
     line: token('--color-line-strong'),
+    light: document.documentElement.dataset.theme === 'light',
   }
   return cached
+}
+
+/**
+ * ## Community colour (U9)
+ *
+ * In a bipartite map every hub *is* a community — its spokes are the whole
+ * membership — so "community-coloured edges" means each hub's edges share a
+ * hue, and the map reads as constellations instead of one undifferentiated
+ * lumen web.
+ *
+ * The hue derives from the hub id, not from insertion order: it has to
+ * survive lens switches, filter edits, and app restarts, or the colours
+ * would reshuffle under the user mid-comparison. The wheel is curated
+ * rather than a full-spectrum hash — it runs green → cyan → violet →
+ * magenta and deliberately skips the warm band, which the signal colours
+ * own (star gold, moved amber, cancelled red must never be mistaken for
+ * mere membership).
+ */
+const COMMUNITY_HUES = [95, 130, 165, 185, 205, 225, 250, 275, 300, 325] as const
+
+/** FNV-1a, 32-bit. Stable, cheap, and spreads short prefixed ids well. */
+function fnv1a(text: string): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
+/** Pure — exported for the stability test; the colour functions wrap it. */
+export function communityHue(id: string): number {
+  const hue = COMMUNITY_HUES[fnv1a(id) % COMMUNITY_HUES.length]
+  return hue ?? COMMUNITY_HUES[0]
+}
+
+/**
+ * Light marks on the dark instrument, pigment on paper — the same law the
+ * node tokens follow, applied to a generated hue.
+ */
+export function communityColor(id: string, alpha: number): string {
+  const hue = communityHue(id)
+  return palette().light
+    ? `hsla(${hue}, 45%, 46%, ${alpha})`
+    : `hsla(${hue}, 70%, 68%, ${alpha})`
 }
 
 export interface PaintEventNode {
@@ -118,6 +166,9 @@ export interface PaintHubNode {
   kind: 'entity'
   x?: number
   y?: number
+  /** The hub's node id — the community key. Edges hash the same id, so a
+   *  hub's nebula and its spokes always agree on a hue. */
+  id: string
   label: string
   /** In-scope events covered. Drives size and label legibility (R12). */
   degree: number
@@ -126,6 +177,10 @@ export interface PaintHubNode {
 }
 
 export type PaintMapNode = PaintEventNode | PaintHubNode
+
+/** Canvas font shorthand cannot read CSS vars — this mirrors --font-sans in
+ *  observatory.css. Keep the two in step if the family ever changes. */
+const LABEL_FONT = "'IBM Plex Sans', -apple-system, system-ui, sans-serif"
 
 const EVENT_RADIUS = { core: 2.4, fringe: 1.8 } as const
 const DIM_ALPHA = 0.1
@@ -186,18 +241,30 @@ function paintHub(
 ): void {
   const { x = 0, y = 0 } = node
 
-  // The shipped Observatory glow, scaled by degree. Designing a *new* light
-  // treatment is U9's brief (R13) — this only decides how much of the existing
-  // one a given hub gets.
+  // The designed glow (U9, R13): a painted nebula in the hub's community hue
+  // rather than the canvas's stock shadowBlur. Two stops shape the falloff —
+  // a lit inner shell that hugs the disc, dying to nothing at a degree-scaled
+  // radius — so big hubs sit in wide auroras and small ones carry a tight
+  // corona. A gradient is also what shadowBlur never was: cheap (no blur
+  // convolution per mark) and tuneable per stop.
   if (!node.dimmed) {
-    ctx.shadowColor = colors.nodeGlow
-    ctx.shadowBlur = Math.min(24, 6 + node.degree)
+    // Daylight alphas run at half the dark theme's weight: pigment on paper
+    // accumulates where light on black dissipates, so the same nebula reads
+    // twice as heavy there (Roger's call: turned down ~50%).
+    const glowRadius = r + Math.min(30, 9 + node.degree * 0.5)
+    const nebula = ctx.createRadialGradient(x, y, r * 0.4, x, y, glowRadius)
+    nebula.addColorStop(0, communityColor(node.id, colors.light ? 0.25 : 0.42))
+    nebula.addColorStop(0.55, communityColor(node.id, colors.light ? 0.1 : 0.16))
+    nebula.addColorStop(1, communityColor(node.id, 0))
+    ctx.beginPath()
+    ctx.arc(x, y, glowRadius, 0, Math.PI * 2)
+    ctx.fillStyle = nebula
+    ctx.fill()
   }
   ctx.beginPath()
   ctx.arc(x, y, r, 0, Math.PI * 2)
   ctx.fillStyle = colors.nodeHub
   ctx.fill()
-  ctx.shadowBlur = 0
 
   if (node.pinned) {
     ctx.beginPath()
@@ -212,7 +279,7 @@ function paintHub(
   if (node.dimmed || scale < hubLabelZoom(node.degree)) return
 
   const size = Math.max(8.5, (9 + Math.sqrt(node.degree)) / scale)
-  ctx.font = `${size}px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`
+  ctx.font = `${size}px ${LABEL_FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.fillStyle = colors.ink
@@ -231,17 +298,27 @@ function paintEvent(
 
   // Fringe dots recede by losing the glow and half their opacity — never by
   // being dropped. R5 is explicit that they stay hoverable.
-  if (!node.fringe && !node.dimmed) {
-    ctx.shadowColor = colors.nodeGlowSoft
-    ctx.shadowBlur = 8
-  }
   if (node.fringe) ctx.globalAlpha *= FRINGE_ALPHA
+
+  // The dot's glow is two translucent shells rather than a gradient: at four
+  // thousand dots per frame the gradient allocation is real money, and at a
+  // 2.4px radius antialiasing melts the steps into a soft corona anyway.
+  if (!node.fringe && !node.dimmed) {
+    const glow = cancelled ? colors.cancelled : colors.nodeGlowSoft
+    ctx.beginPath()
+    ctx.arc(x, y, r + 4, 0, Math.PI * 2)
+    ctx.fillStyle = withAlpha(glow, 0.09)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.arc(x, y, r + 1.6, 0, Math.PI * 2)
+    ctx.fillStyle = withAlpha(glow, 0.2)
+    ctx.fill()
+  }
 
   ctx.beginPath()
   ctx.arc(x, y, r, 0, Math.PI * 2)
   ctx.fillStyle = cancelled ? colors.cancelled : node.fringe ? colors.fringe : colors.nodeEvent
   ctx.fill()
-  ctx.shadowBlur = 0
 
   // The user's own mark sits outside the node so it survives every lens.
   if (node.starred) {
@@ -281,7 +358,7 @@ function paintEvent(
   if (node.dimmed || !node.pinned) return
 
   const size = Math.max(8, 10 / scale)
-  ctx.font = `${size}px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`
+  ctx.font = `${size}px ${LABEL_FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.fillStyle = colors.fringe
@@ -301,13 +378,18 @@ function truncate(text: string, max: number): string {
 
 /**
  * Links carry no weight of their own here — one event-entity pair is one fact,
- * and the hub's size already says how many of them it collects. So a link is
- * either part of the neighbourhood under the cursor or it is background.
+ * and the hub's size already says how many of them it collects. What a link
+ * *does* carry is membership: at rest it wears its hub's community hue (U9),
+ * so adjacent constellations separate at a glance instead of merging into one
+ * lumen web. The focused neighbourhood still lights in lumen — focus is the
+ * instrument's light, not a community's.
  */
-export function linkColor(active: boolean, dimmed: boolean): string {
+export function linkColor(active: boolean, dimmed: boolean, hubId?: string): string {
   const colors = palette()
-  if (dimmed) return withAlpha(colors.lumenDim, 0.04)
-  return active ? withAlpha(colors.lumen, 0.75) : withAlpha(colors.lumenDim, 0.16)
+  if (dimmed) return hubId ? communityColor(hubId, 0.05) : withAlpha(colors.lumenDim, 0.04)
+  if (active) return withAlpha(colors.lumen, 0.75)
+  if (hubId) return communityColor(hubId, colors.light ? 0.3 : 0.2)
+  return withAlpha(colors.lumenDim, 0.16)
 }
 
 export function linkWidth(active: boolean): number {

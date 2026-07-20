@@ -47,6 +47,7 @@ import { forceCollide, forceRadial, forceX, forceY } from 'd3-force'
 import { useSpine } from '@renderer/state/spine'
 import { useEntityMap } from '@renderer/state/useEntityMap'
 import { CardPresence } from '@renderer/components/CardPresence'
+import { InstrumentState } from '@renderer/components/InstrumentState'
 import { EventCard } from '@renderer/components/EventCard'
 import { EntityCard } from '@renderer/components/EntityCard'
 import { valueLabel } from '@renderer/sidebar/labels'
@@ -404,7 +405,16 @@ export function GraphView() {
       const model = node.model
       if (model.kind === 'entity') {
         paintMapNode(
-          { kind: 'entity', x: node.x, y: node.y, label: entityLabel(model.entity), degree: model.degree, pinned, dimmed },
+          {
+            kind: 'entity',
+            x: node.x,
+            y: node.y,
+            id: node.id,
+            label: entityLabel(model.entity),
+            degree: model.degree,
+            pinned,
+            dimmed,
+          },
           ctx,
           scale,
         )
@@ -471,7 +481,13 @@ export function GraphView() {
   }, [allFringe, map.indexes, lens, scopeSet])
 
   if (!map.ready) {
-    return <Centered>Loading the schedule…</Centered>
+    return (
+      <Centered>
+        <InstrumentState eyebrow="Entity map" loading>
+          Loading the schedule…
+        </InstrumentState>
+      </Centered>
+    )
   }
 
   const pinnedHub = pinnedEntity ? hubsById.get(pinnedEntity) : undefined
@@ -510,10 +526,12 @@ export function GraphView() {
             block, not a flex container, so `flex-1` on a child is inert and the
             message would sit at the top of an otherwise empty pane. */}
         {map.events.length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center px-8 text-center text-[12px] text-ink-faint">
-            {map.filterActive
-              ? 'No events match the current filter — the map draws whatever the filter holds.'
-              : 'No events to map yet.'}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <InstrumentState eyebrow={map.filterActive ? 'Nothing in scope' : 'Entity map'}>
+              {map.filterActive
+                ? 'No events match the current filter—the map draws whatever the filter holds.'
+                : 'No events to map yet.'}
+            </InstrumentState>
           </div>
         ) : null}
 
@@ -543,7 +561,8 @@ export function GraphView() {
             }}
             linkColor={(link) => {
               const active = lit ? lit.has(idOf(link.source)) && lit.has(idOf(link.target)) : false
-              return linkColor(active, lit ? !active : false)
+              // The target end is always the hub — its id keys the community hue.
+              return linkColor(active, lit ? !active : false, idOf(link.target))
             }}
             linkWidth={(link) =>
               linkWidth(lit ? lit.has(idOf(link.source)) && lit.has(idOf(link.target)) : false)
