@@ -69,7 +69,7 @@ describe('runChatTurn', () => {
     expect(res.ok).toBe(true)
     if (!res.ok) return
     expect(res.turn.message.content).toBe('Filtered to horror; here is Panel a.')
-    expect(res.turn.patch?.filter.chips).toEqual([{ dimension: 'genre', value: 'Horror' }])
+    expect(res.turn.patch?.filter?.chips).toEqual([{ dimension: 'genre', value: 'Horror' }])
     expect(res.turn.eventUids).toEqual(['a'])
     expect(res.turn.toolTrace).toEqual(['apply_filters', 'get_event'])
     expect(res.turn.proposedAction).toBeUndefined()
@@ -84,7 +84,7 @@ describe('runChatTurn', () => {
     expect(res.ok).toBe(true)
     if (!res.ok) return
     expect(res.turn.proposedAction?.kind).toBe('star')
-    expect(res.turn.proposedAction?.events[0].uid).toBe('a')
+    expect(res.turn.proposedAction?.events[0]?.uid).toBe('a')
   })
 
   it('classifies a 401 as an auth error the tab can act on', async () => {

@@ -1,4 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type {
+  ChatRequest,
+  ChatResponse,
+  KeyStatus,
+  ProviderId,
+} from '../shared/chat'
+import type { FilterCandidate } from '../shared/filter/types'
 
 /**
  * The only surface the renderer gets. One named method per channel — no generic
@@ -21,6 +28,22 @@ const api = {
   },
   export: {
     ics: (payload: { uids: string[]; options?: unknown }) => ipcRenderer.invoke('export:ics', payload),
+  },
+  llm: {
+    /** Which providers have a stored key — the key value never crosses here. */
+    keyStatus: (): Promise<KeyStatus> => ipcRenderer.invoke('llm:key:status'),
+    setKey: (
+      provider: ProviderId,
+      key: string,
+    ): Promise<{ ok: true; status: KeyStatus } | { ok: false; message: string }> =>
+      ipcRenderer.invoke('llm:key:set', { provider, key }),
+    clearKey: (provider: ProviderId): Promise<KeyStatus> =>
+      ipcRenderer.invoke('llm:key:clear', { provider }),
+    /** Push the current candidate index so the tool loop grounds counts and
+     *  searches in main; called when the identity-stable array changes. */
+    syncDataset: (candidates: readonly FilterCandidate[]): Promise<{ received: number }> =>
+      ipcRenderer.invoke('llm:dataset:sync', candidates),
+    chat: (request: ChatRequest): Promise<ChatResponse> => ipcRenderer.invoke('llm:chat', request),
   },
 }
 

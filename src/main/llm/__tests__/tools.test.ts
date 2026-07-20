@@ -63,7 +63,7 @@ describe('apply_filters', () => {
     expect(result.count).toBe(2) // a and c
     expect(result.unresolved).toEqual([])
     expect(result.applied).toContain('Genre: Horror')
-    expect(capture.patch?.filter.chips).toEqual([{ dimension: 'genre', value: 'Horror' }])
+    expect(capture.patch?.filter?.chips).toEqual([{ dimension: 'genre', value: 'Horror' }])
     expect(capture.toolTrace).toEqual(['apply_filters'])
   })
 
@@ -72,7 +72,7 @@ describe('apply_filters', () => {
     const result = await run(tools.apply_filters, { add: [{ dimension: 'ip', value: 'Pokemon' }] })
 
     expect(result.unresolved).toEqual(['ip: Pokemon'])
-    expect(capture.patch?.filter.chips).toEqual([]) // nothing added
+    expect(capture.patch?.filter?.chips).toEqual([]) // nothing added
   })
 
   it('carries lens and view into the patch', async () => {
