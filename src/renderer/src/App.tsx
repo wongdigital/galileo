@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { SpineProvider, useSpine, type ViewMode } from './state/spine'
 import { useSchedule } from './state/useSchedule'
+import { isEmptyFilter } from '@shared/filter'
 import { FiltersTab } from './sidebar/FiltersTab'
 import { ChatTab } from './sidebar/ChatTab'
 import { ScheduleView } from './views/schedule/ScheduleView'
@@ -78,6 +79,9 @@ const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
  */
 function Sidebar() {
   const [tab, setTab] = useState<SidebarTab>('filter')
+  const { filter } = useSpine()
+  const filterActive = !isEmptyFilter(filter)
+
   return (
     <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-ground-950">
       <div className="shrink-0 border-b border-line p-2">
@@ -91,7 +95,7 @@ function Sidebar() {
                 onClick={() => setTab(t.id)}
                 aria-pressed={active}
                 className={[
-                  'flex-1 rounded-[7px] px-3 py-1.5 text-[13px] font-medium',
+                  'relative flex-1 rounded-[7px] px-3 py-1.5 text-[13px] font-medium',
                   'transition-all duration-[--duration-toggle] ease-[--ease-instrument]',
                   active
                     ? 'bg-ground-700 text-ink-bright shadow-[0_0_0_1px_var(--color-line-strong),0_0_18px_-6px_var(--color-lumen)]'
@@ -99,6 +103,14 @@ function Sidebar() {
                 ].join(' ')}
               >
                 {t.label}
+                {/* A live dot when the filter is doing something, so the
+                    indicator is visible even while the Chat tab is open. */}
+                {t.id === 'filter' && filterActive ? (
+                  <span
+                    aria-label="filters active"
+                    className="absolute right-2 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-lumen shadow-[0_0_8px_1px_var(--color-lumen-dim)]"
+                  />
+                ) : null}
               </button>
             )
           })}

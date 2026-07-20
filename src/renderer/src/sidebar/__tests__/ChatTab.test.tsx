@@ -182,8 +182,6 @@ describe('ChatTab', () => {
     await waitFor(() => expect(screen.getByText('1 event matches Horror — filtered.')).toBeTruthy())
     // The patch reached the spine — same object a chip click would build.
     expect(screen.getByTestId('chips').textContent).toBe('genre:Horror')
-    // The get_event uid rendered as a reference.
-    expect(screen.getByText('Drawing Monsters for a Living')).toBeTruthy()
     // The user's message is echoed too.
     expect(screen.getByText("I'm into horror")).toBeTruthy()
   })

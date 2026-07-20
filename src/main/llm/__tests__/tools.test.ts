@@ -75,6 +75,14 @@ describe('apply_filters', () => {
     expect(capture.patch?.filter?.chips).toEqual([]) // nothing added
   })
 
+  it('marks every matched sample event linkable, not just the first', async () => {
+    const { tools, capture } = setup()
+    await run(tools.apply_filters, { add: [{ dimension: 'genre', value: 'horror' }] })
+    // Both horror events (a and c) become linkable, so the model's bolded names
+    // for either one resolve — the bug was only the first surviving the cap.
+    expect(capture.eventUids).toEqual(['a', 'c'])
+  })
+
   it('does not touch the view or lens — that is set_view territory', async () => {
     const { tools, capture } = setup()
     await run(tools.apply_filters, { add: [{ dimension: 'genre', value: 'horror' }] })

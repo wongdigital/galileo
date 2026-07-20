@@ -451,10 +451,12 @@ function Bubble({
               strong: ({ node: _node, children }) => {
                 const uid = eventByTitle.get(nodeText(children).trim().toLowerCase())
                 return uid ? (
+                  // White like the surrounding bold, with the link affordance
+                  // held back to hover — a wall of blue in a list is noise.
                   <button
                     type="button"
                     onClick={() => onOpen(uid)}
-                    className="font-semibold text-lumen underline decoration-dotted underline-offset-2 transition-colors duration-150 hover:text-lumen-bright"
+                    className="cursor-pointer bg-transparent align-baseline font-semibold text-ink-bright underline-offset-2 transition-all duration-150 hover:underline"
                   >
                     {children}
                   </button>
@@ -468,28 +470,6 @@ function Bubble({
           </Markdown>
         </div>
       )}
-
-      {entry.eventUids && entry.eventUids.length > 0 ? (
-        <div className="flex flex-col gap-1.5">
-          {entry.eventUids.map((uid) => {
-            const event = byUid.get(uid)
-            if (!event) return null
-            return (
-              <button
-                key={uid}
-                type="button"
-                onClick={() => onOpen(uid)}
-                className="rounded-md border border-line bg-ground-900 px-2.5 py-1.5 text-left transition-colors duration-150 hover:border-lumen-dim"
-              >
-                <div className="truncate text-[12px] text-ink-bright">{event.title}</div>
-                <div className="text-[10.5px] text-ink-faint">
-                  {whenLabel(event.start)} · {event.room}
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
 
       {entry.proposedAction ? (
         <ActionCard

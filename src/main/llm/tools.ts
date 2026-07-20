@@ -54,6 +54,12 @@ const chipShape = {
 
 const chipSchema = z.object(chipShape)
 
+/** How many event uids a turn may mark linkable. Generous, because the set only
+ *  powers inline links — a name the model does not write is never rendered — so
+ *  a big scope costs nothing, and a tight cap is what dropped the real results
+ *  after an exploratory search filled it first. */
+const LINKABLE_CAP = 60
+
 /** ISO → "Fri, Jul 24, 10:00 AM", in Pacific (where the con runs). Given to the
  *  model so it repeats a correct time instead of computing a weekday itself. */
 function formatWhen(iso: string | null): string | null {
@@ -145,7 +151,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
         })
         // The events the model will name in its reply — make them linkable.
         for (const s of sample) {
-          if (capture.eventUids.length < 12 && !capture.eventUids.includes(s.uid)) {
+          if (capture.eventUids.length < LINKABLE_CAP && !capture.eventUids.includes(s.uid)) {
             capture.eventUids.push(s.uid)
           }
         }
@@ -207,7 +213,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
         // Surface the found events as linked cards in the chat (capped so a broad
         // search doesn't flood the transcript), deduped against get_event's.
         for (const row of shown) {
-          if (capture.eventUids.length < 12 && !capture.eventUids.includes(row.uid)) {
+          if (capture.eventUids.length < LINKABLE_CAP && !capture.eventUids.includes(row.uid)) {
             capture.eventUids.push(row.uid)
           }
         }
