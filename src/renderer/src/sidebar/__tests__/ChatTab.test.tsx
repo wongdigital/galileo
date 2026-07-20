@@ -98,6 +98,11 @@ function FilterProbe() {
   return <div data-testid="chips">{filter.chips.map((c) => `${c.dimension}:${c.value}`).join(',')}</div>
 }
 
+function SelectionProbe() {
+  const { selectedUid } = useSpine()
+  return <div data-testid="sel">{selectedUid ?? ''}</div>
+}
+
 async function mount() {
   const view = render(
     <SpineProvider>
@@ -196,6 +201,30 @@ describe('ChatTab', () => {
     expect(request.messages.at(-1)).toEqual({ role: 'user', content: 'hello' })
     expect(request.filter).toBeDefined()
     expect(request.lens).toBe('ip')
+  })
+
+  it('makes a bolded event title in the reply open its card', async () => {
+    chat.mockResolvedValue({
+      ok: true,
+      turn: {
+        message: { role: 'assistant', content: 'Found it: **Drawing Monsters for a Living** runs Saturday.' },
+        eventUids: ['horror-sat'],
+        toolTrace: ['search_events'],
+      },
+    })
+    render(
+      <SpineProvider>
+        <ChatTab />
+        <SelectionProbe />
+      </SpineProvider>,
+    )
+    await waitFor(() => expect(syncDataset).toHaveBeenCalled())
+    await sendMessage('find the monsters panel')
+
+    // The bolded title is a button, not inert text, and clicking it selects the event.
+    const link = await screen.findByRole('button', { name: 'Drawing Monsters for a Living' })
+    fireEvent.click(link)
+    expect(screen.getByTestId('sel').textContent).toBe('horror-sat')
   })
 
   it('proposes a star action that only commits on confirm', async () => {

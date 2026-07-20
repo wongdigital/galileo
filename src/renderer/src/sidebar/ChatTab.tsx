@@ -15,7 +15,7 @@
  * choice per provider is not secret and persists in localStorage.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Markdown from 'react-markdown'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
@@ -99,6 +99,15 @@ function whenLabel(iso: string | null): string {
   const parts = localParts(iso)
   const time = formatTime(iso)
   return parts ? `${dayLabel(parts.date).weekday} ${time}` : time
+}
+
+/** Flatten a Markdown node's children to their plain text, for matching a
+ *  bolded run against a known event title. */
+function nodeText(children: ReactNode): string {
+  if (typeof children === 'string') return children
+  if (typeof children === 'number') return String(children)
+  if (Array.isArray(children)) return children.map(nodeText).join('')
+  return ''
 }
 
 const bridge = () =>
@@ -402,6 +411,19 @@ function Bubble({
   onDismiss: () => void
 }) {
   const isUser = entry.message.role === 'user'
+
+  // Title -> uid for the events this turn's tools returned, so the model's own
+  // bolded event names become clickable in place (matching the user's mental
+  // model — the name in the sentence is the link).
+  const eventByTitle = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const uid of entry.eventUids ?? []) {
+      const event = byUid.get(uid)
+      if (event) map.set(event.title.trim().toLowerCase(), uid)
+    }
+    return map
+  }, [entry.eventUids, byUid])
+
   return (
     <div className={isUser ? 'flex justify-end' : 'flex flex-col gap-2'}>
       {isUser ? (
@@ -425,6 +447,21 @@ function Bubble({
             components={{
               // Links open in the user's browser, never navigate the app window.
               a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+              // A bolded event name we recognize becomes a link to its card.
+              strong: ({ node: _node, children }) => {
+                const uid = eventByTitle.get(nodeText(children).trim().toLowerCase())
+                return uid ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpen(uid)}
+                    className="font-semibold text-lumen underline decoration-dotted underline-offset-2 transition-colors duration-150 hover:text-lumen-bright"
+                  >
+                    {children}
+                  </button>
+                ) : (
+                  <strong>{children}</strong>
+                )
+              },
             }}
           >
             {entry.message.content}

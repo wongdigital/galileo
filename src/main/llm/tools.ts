@@ -143,6 +143,12 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
             ? [{ uid: row.uid, title: row.title, when: row.when, room: row.room, genres: c.dimensions.genre ?? [], franchises: c.dimensions.ip ?? [] }]
             : []
         })
+        // The events the model will name in its reply — make them linkable.
+        for (const s of sample) {
+          if (capture.eventUids.length < 12 && !capture.eventUids.includes(s.uid)) {
+            capture.eventUids.push(s.uid)
+          }
+        }
         return {
           count: matched.length,
           applied: describeFilter(nextFilter).map((part) => part.label),
