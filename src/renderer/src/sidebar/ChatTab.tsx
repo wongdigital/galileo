@@ -9,6 +9,10 @@
  * chip click uses (R15 — chat produces the same state as the chips), event
  * uids to render as references, and a proposed mutation that waits for a tap.
  * Nothing here stars or exports without that tap (rule 2).
+ *
+ * Keys and model live in a setup screen the gear under the composer opens.
+ * The API key is stored encrypted in main and never read back here; the model
+ * choice per provider is not secret and persists in localStorage.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -21,6 +25,63 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   openrouter: 'OpenRouter',
+}
+
+/** Curated model choices per provider — a dropdown, plus a Custom escape hatch
+ *  for anything not listed. OpenRouter slugs are namespaced by their upstream
+ *  provider, so they read "OpenAI: GPT-5.6 Luna". The first entry is the
+ *  default. Any id can be overridden via Custom, so a stale list never traps
+ *  a user on a retired model. */
+interface ModelChoice {
+  id: string
+  label: string
+}
+
+const MODELS: Record<ProviderId, ModelChoice[]> = {
+  anthropic: [
+    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+    { id: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
+    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+  ],
+  openai: [
+    { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
+    { id: 'gpt-5', label: 'GPT-5' },
+    { id: 'gpt-4.1', label: 'GPT-4.1' },
+  ],
+  openrouter: [
+    { id: 'anthropic/claude-sonnet-5', label: 'Anthropic: Claude Sonnet 5' },
+    { id: 'anthropic/claude-opus-4.8', label: 'Anthropic: Claude Opus 4.8' },
+    { id: 'openai/gpt-5.6-luna', label: 'OpenAI: GPT-5.6 Luna' },
+    { id: 'google/gemini-2.5-pro', label: 'Google: Gemini 2.5 Pro' },
+  ],
+}
+
+const MODEL_STORE_KEY = 'sdcc.chat.models'
+
+function defaultModels(): Record<ProviderId, string> {
+  return { anthropic: MODELS.anthropic[0]!.id, openai: MODELS.openai[0]!.id, openrouter: MODELS.openrouter[0]!.id }
+}
+
+function loadModels(): Record<ProviderId, string> {
+  const base = defaultModels()
+  try {
+    const raw = JSON.parse(localStorage.getItem(MODEL_STORE_KEY) ?? '{}') as Partial<Record<ProviderId, string>>
+    for (const provider of PROVIDERS) {
+      if (typeof raw[provider] === 'string' && raw[provider]) base[provider] = raw[provider] as string
+    }
+  } catch {
+    // No stored preference yet, or corrupt — the defaults stand.
+  }
+  return base
+}
+
+function saveModels(models: Record<ProviderId, string>): void {
+  try {
+    localStorage.setItem(MODEL_STORE_KEY, JSON.stringify(models))
+  } catch {
+    // A private-mode localStorage that rejects writes is not worth failing over;
+    // the choice just will not survive a restart.
+  }
 }
 
 /** One rendered turn: the message plus whatever the tool loop attached to it. */
@@ -50,11 +111,18 @@ export function ChatTab() {
   const [error, setError] = useState<string | null>(null)
   const [keyStatus, setKeyStatus] = useState<KeyStatus | null>(null)
   const [provider, setProvider] = useState<ProviderId>('anthropic')
-  const [showKeys, setShowKeys] = useState(false)
+  const [models, setModels] = useState<Record<ProviderId, string>>(defaultModels)
+  const [setupOpen, setSetupOpen] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  // Load which providers have a key, and pick the first one that does.
+  // Load the persisted model choices once.
+  useEffect(() => {
+    setModels(loadModels())
+  }, [])
+
+  // Load which providers have a key; pick the first that does, and open setup
+  // straight away when none do — there is nothing else to do until a key exists.
   useEffect(() => {
     const api = bridge()
     if (!api) return
@@ -62,6 +130,7 @@ export function ChatTab() {
       setKeyStatus(status)
       const firstWithKey = PROVIDERS.find((p) => status[p])
       if (firstWithKey) setProvider(firstWithKey)
+      else setSetupOpen(true)
     })
   }, [])
 
@@ -81,6 +150,14 @@ export function ChatTab() {
 
   const hasAnyKey = keyStatus ? PROVIDERS.some((p) => keyStatus[p]) : false
 
+  const setModelFor = useCallback((target: ProviderId, id: string) => {
+    setModels((prev) => {
+      const next = { ...prev, [target]: id }
+      saveModels(next)
+      return next
+    })
+  }, [])
+
   const send = useCallback(async () => {
     const text = input.trim()
     if (!text || sending) return
@@ -90,10 +167,7 @@ export function ChatTab() {
       return
     }
 
-    const history: ChatMessage[] = [
-      ...entries.map((e) => e.message),
-      { role: 'user', content: text },
-    ]
+    const history: ChatMessage[] = [...entries.map((e) => e.message), { role: 'user', content: text }]
     setEntries((prev) => [...prev, { message: { role: 'user', content: text } }])
     setInput('')
     setSending(true)
@@ -102,6 +176,7 @@ export function ChatTab() {
     try {
       const response = await api.chat({
         provider,
+        model: models[provider] || undefined,
         messages: history,
         filter: spine.filter,
         lens: spine.lens,
@@ -112,8 +187,8 @@ export function ChatTab() {
 
       if (!response.ok) {
         setError(response.error.message)
-        // A missing or rejected key sends the user straight to the key field.
-        if (response.error.kind === 'no-key' || response.error.kind === 'auth') setShowKeys(true)
+        // A missing or rejected key sends the user straight to setup.
+        if (response.error.kind === 'no-key' || response.error.kind === 'auth') setSetupOpen(true)
         return
       }
 
@@ -137,7 +212,7 @@ export function ChatTab() {
     } finally {
       setSending(false)
     }
-  }, [input, sending, entries, provider, spine])
+  }, [input, sending, entries, provider, models, spine])
 
   const confirmAction = useCallback(
     async (index: number, action: ProposedAction) => {
@@ -152,17 +227,13 @@ export function ChatTab() {
         const api = window.api
         if (api) await api.export.ics({ uids: action.events.map((e) => e.uid) })
       }
-      setEntries((prev) =>
-        prev.map((entry, i) => (i === index ? { ...entry, actionState: 'done' } : entry)),
-      )
+      setEntries((prev) => prev.map((entry, i) => (i === index ? { ...entry, actionState: 'done' } : entry)))
     },
     [byUid, spine],
   )
 
   const dismissAction = useCallback((index: number) => {
-    setEntries((prev) =>
-      prev.map((entry, i) => (i === index ? { ...entry, actionState: 'cancelled' } : entry)),
-    )
+    setEntries((prev) => prev.map((entry, i) => (i === index ? { ...entry, actionState: 'cancelled' } : entry)))
   }, [])
 
   return (
@@ -174,31 +245,21 @@ export function ChatTab() {
             {PROVIDER_LABEL[provider]}
           </span>
         ) : null}
-        <button
-          type="button"
-          onClick={() => setShowKeys((v) => !v)}
-          title="Manage API keys"
-          className="ml-auto rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim transition-colors duration-150 hover:border-lumen-dim hover:text-lumen"
-        >
-          Keys
-        </button>
       </div>
 
-      {showKeys || !hasAnyKey ? (
-        <KeyPanel
-          keyStatus={keyStatus}
-          activeProvider={provider}
-          onSelectProvider={setProvider}
-          onChanged={(status) => {
-            setKeyStatus(status)
-            if (PROVIDERS.some((p) => status[p])) setShowKeys(false)
-          }}
-        />
-      ) : null}
-
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {entries.length === 0 ? (
-          <EmptyState enabled={hasAnyKey} />
+        {setupOpen ? (
+          <KeySetup
+            keyStatus={keyStatus}
+            provider={provider}
+            models={models}
+            onProviderChange={setProvider}
+            onModelChange={setModelFor}
+            onStatus={setKeyStatus}
+            onDone={() => setSetupOpen(false)}
+          />
+        ) : entries.length === 0 ? (
+          <EmptyState />
         ) : (
           <div className="flex flex-col gap-3">
             {entries.map((entry, i) => (
@@ -235,7 +296,22 @@ export function ChatTab() {
           placeholder={hasAnyKey ? 'Ask, filter, or plan…' : 'Add an API key to start'}
           className="w-full resize-none rounded-md border border-line bg-ground-850 px-2.5 py-2 text-[12.5px] text-ink placeholder:text-ink-fringe focus:border-lumen-dim focus:outline-none disabled:opacity-50"
         />
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setSetupOpen((v) => !v)}
+            aria-label="Model and API keys"
+            aria-pressed={setupOpen}
+            title="Model & API keys"
+            className={[
+              'rounded-md border px-2 py-1.5 text-[13px] leading-none transition-colors duration-150',
+              setupOpen
+                ? 'border-lumen-dim text-lumen'
+                : 'border-line text-ink-dim hover:border-lumen-dim hover:text-lumen',
+            ].join(' ')}
+          >
+            <span aria-hidden="true">⚙</span>
+          </button>
           <button
             type="button"
             onClick={() => void send()}
@@ -250,16 +326,7 @@ export function ChatTab() {
   )
 }
 
-function EmptyState({ enabled }: { enabled: boolean }) {
-  if (!enabled) {
-    return (
-      <p className="text-[12px] leading-relaxed text-ink-faint">
-        The concierge grounds every schedule answer in the app's own data. Add an API key above to
-        turn it on — your key is stored encrypted on this machine and never leaves it except to your
-        chosen provider.
-      </p>
-    )
-  }
+function EmptyState() {
   return (
     <div className="text-[12px] leading-relaxed text-ink-faint">
       <p className="mb-2">Try:</p>
@@ -292,9 +359,7 @@ function Bubble({
       <div
         className={[
           'max-w-[90%] whitespace-pre-wrap rounded-lg px-3 py-2 text-[12.5px] leading-relaxed',
-          isUser
-            ? 'self-end bg-lumen/10 text-ink-bright'
-            : 'bg-ground-850 text-ink',
+          isUser ? 'self-end bg-lumen/10 text-ink-bright' : 'bg-ground-850 text-ink',
         ].join(' ')}
       >
         {entry.message.content}
@@ -382,37 +447,62 @@ function ActionCard({
   )
 }
 
-function KeyPanel({
+/**
+ * The model-and-keys screen. Provider → model → key, top to bottom. Draft keys
+ * are held per provider so switching providers to enter a second key never
+ * clears the first; on Save every provider with a typed key is persisted and
+ * the screen closes back to the chat.
+ */
+function KeySetup({
   keyStatus,
-  activeProvider,
-  onSelectProvider,
-  onChanged,
+  provider,
+  models,
+  onProviderChange,
+  onModelChange,
+  onStatus,
+  onDone,
 }: {
   keyStatus: KeyStatus | null
-  activeProvider: ProviderId
-  onSelectProvider: (provider: ProviderId) => void
-  onChanged: (status: KeyStatus) => void
+  provider: ProviderId
+  models: Record<ProviderId, string>
+  onProviderChange: (provider: ProviderId) => void
+  onModelChange: (provider: ProviderId, id: string) => void
+  onStatus: (status: KeyStatus) => void
+  onDone: () => void
 }) {
-  const [draftProvider, setDraftProvider] = useState<ProviderId>(activeProvider)
-  const [key, setKey] = useState('')
+  // Draft keys the user has typed this session, one slot per provider. Never
+  // pre-filled from storage — main does not hand stored keys back.
+  const [draftKeys, setDraftKeys] = useState<Partial<Record<ProviderId, string>>>({})
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
 
+  const selectedModel = models[provider]
+  const modelList = MODELS[provider]
+  const isCustomModel = !modelList.some((m) => m.id === selectedModel)
+
   const save = async () => {
     const api = bridge()
-    if (!api || !key.trim()) return
+    if (!api) return
     setBusy(true)
     setNote(null)
     try {
-      const result = await api.setKey(draftProvider, key.trim())
-      if (result.ok) {
-        setKey('')
-        onSelectProvider(draftProvider)
-        onChanged(result.status)
-        setNote('Saved.')
-      } else {
-        setNote(result.message)
+      let status: KeyStatus | null = null
+      let failure: string | null = null
+      for (const p of PROVIDERS) {
+        const draft = draftKeys[p]?.trim()
+        if (!draft) continue
+        const result = await api.setKey(p, draft)
+        if (result.ok) status = result.status
+        else failure = result.message
       }
+      if (failure) {
+        setNote(failure)
+        return
+      }
+      if (status) onStatus(status)
+      // Save even if no new key was typed — the user may have only changed the
+      // model — and return to the chat.
+      onDone()
     } finally {
       setBusy(false)
     }
@@ -423,64 +513,101 @@ function KeyPanel({
     if (!api) return
     setBusy(true)
     try {
-      onChanged(await api.clearKey(draftProvider))
-      setNote('Cleared.')
+      onStatus(await api.clearKey(provider))
+      setDraftKeys((prev) => ({ ...prev, [provider]: '' }))
+      setNote(`${PROVIDER_LABEL[provider]} key cleared.`)
     } finally {
       setBusy(false)
     }
   }
 
+  const saved = keyStatus?.[provider] ?? false
+
   return (
-    <div className="shrink-0 border-b border-line bg-ground-950 px-4 py-3">
-      <div className="mb-2 flex gap-1">
-        {PROVIDERS.map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => setDraftProvider(p)}
-            className={[
-              'flex-1 rounded-md border px-2 py-1 text-[11px] transition-colors duration-150',
-              draftProvider === p
-                ? 'border-lumen-dim text-ink-bright'
-                : 'border-line text-ink-dim hover:text-ink',
-            ].join(' ')}
-          >
-            {PROVIDER_LABEL[p]}
-            {keyStatus?.[p] ? <span className="ml-1 text-lumen">•</span> : null}
-          </button>
-        ))}
-      </div>
-      <input
-        type="password"
-        value={key}
-        onChange={(e) => setKey(e.target.value)}
-        placeholder={`${PROVIDER_LABEL[draftProvider]} API key`}
-        className="w-full rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-fringe focus:border-lumen-dim focus:outline-none"
-      />
-      <div className="mt-2 flex items-center gap-2">
+    <div className="flex flex-col gap-3">
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-ink-dim">Model &amp; keys</p>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[11px] text-ink-faint">Provider</span>
+        <select
+          value={provider}
+          onChange={(e) => onProviderChange(e.target.value as ProviderId)}
+          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12.5px] text-ink focus:border-lumen-dim focus:outline-none"
+        >
+          {PROVIDERS.map((p) => (
+            <option key={p} value={p}>
+              {PROVIDER_LABEL[p]}
+              {keyStatus?.[p] ? ' •' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[11px] text-ink-faint">Model</span>
+        <select
+          value={isCustomModel ? 'custom' : selectedModel}
+          onChange={(e) => {
+            const value = e.target.value
+            onModelChange(provider, value === 'custom' ? '' : value)
+          }}
+          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12.5px] text-ink focus:border-lumen-dim focus:outline-none"
+        >
+          {modelList.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+          <option value="custom">Custom…</option>
+        </select>
+      </label>
+
+      {isCustomModel ? (
+        <input
+          type="text"
+          value={selectedModel}
+          onChange={(e) => onModelChange(provider, e.target.value)}
+          placeholder="Exact model id"
+          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-fringe focus:border-lumen-dim focus:outline-none"
+        />
+      ) : null}
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[11px] text-ink-faint">API key</span>
+        <input
+          type="password"
+          value={draftKeys[provider] ?? ''}
+          onChange={(e) => setDraftKeys((prev) => ({ ...prev, [provider]: e.target.value }))}
+          placeholder={saved ? `${PROVIDER_LABEL[provider]} key saved — enter to replace` : `${PROVIDER_LABEL[provider]} API key`}
+          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-fringe focus:border-lumen-dim focus:outline-none"
+        />
+      </label>
+
+      <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => void save()}
-          disabled={busy || key.trim().length === 0}
-          className="rounded-md border border-lumen-dim bg-lumen/10 px-2.5 py-1 text-[11.5px] text-ink-bright hover:bg-lumen/20 disabled:opacity-40"
+          disabled={busy}
+          className="rounded-md border border-lumen-dim bg-lumen/10 px-3 py-1.5 text-[12px] text-ink-bright hover:bg-lumen/20 disabled:opacity-40"
         >
           Save
         </button>
-        {keyStatus?.[draftProvider] ? (
+        {saved ? (
           <button
             type="button"
             onClick={() => void clear()}
             disabled={busy}
-            className="rounded-md px-2.5 py-1 text-[11.5px] text-ink-faint hover:text-cancelled"
+            className="rounded-md px-2.5 py-1.5 text-[11.5px] text-ink-faint hover:text-cancelled"
           >
-            Clear
+            Clear key
           </button>
         ) : null}
         {note ? <span className="text-[11px] text-ink-faint">{note}</span> : null}
       </div>
-      <p className="mt-2 text-[10.5px] leading-relaxed text-ink-fringe">
-        Stored encrypted on this machine. Event descriptions are sent to your chosen provider when
-        you ask about them.
+
+      <p className="text-[10.5px] leading-relaxed text-ink-fringe">
+        Keys are stored encrypted on this machine. Event descriptions are sent to your chosen
+        provider when you ask about them.
       </p>
     </div>
   )

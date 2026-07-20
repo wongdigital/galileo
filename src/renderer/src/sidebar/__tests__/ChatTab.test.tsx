@@ -115,15 +115,41 @@ async function sendMessage(text: string) {
 }
 
 describe('ChatTab', () => {
-  it('shows the key panel and disables the composer when no key is stored', async () => {
+  it('opens setup and disables the composer when no key is stored', async () => {
     keyStatus = { anthropic: false, openai: false, openrouter: false }
     render(
       <SpineProvider>
         <ChatTab />
       </SpineProvider>,
     )
-    await waitFor(() => expect(screen.getByPlaceholderText(/Anthropic API key/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Model & keys')).toBeTruthy())
+    expect(screen.getByPlaceholderText(/Anthropic API key/)).toBeTruthy()
     expect((screen.getByPlaceholderText('Add an API key to start') as HTMLTextAreaElement).disabled).toBe(true)
+  })
+
+  it('remembers a draft key for one provider while entering another', async () => {
+    keyStatus = { anthropic: false, openai: false, openrouter: false }
+    render(
+      <SpineProvider>
+        <ChatTab />
+      </SpineProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('Model & keys')).toBeTruthy())
+
+    const keyField = () => screen.getByLabelText('API key', { selector: 'input' }) as HTMLInputElement
+    fireEvent.change(keyField(), { target: { value: 'sk-ant-draft' } })
+
+    // Switch to OpenAI, type its key, then back — the Anthropic draft survives.
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openai' } })
+    expect(keyField().value).toBe('')
+    fireEvent.change(keyField(), { target: { value: 'sk-oai-draft' } })
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'anthropic' } })
+    expect(keyField().value).toBe('sk-ant-draft')
+
+    // Save persists every provider that got a draft, and closes setup.
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(setKey).toHaveBeenCalledWith('anthropic', 'sk-ant-draft'))
+    expect(setKey).toHaveBeenCalledWith('openai', 'sk-oai-draft')
   })
 
   it('syncs the candidate index to main on load', async () => {
@@ -200,6 +226,7 @@ describe('ChatTab', () => {
     await mount()
     await sendMessage('hi')
     await waitFor(() => expect(screen.getByText(/API key was rejected/)).toBeTruthy())
-    expect(screen.getByPlaceholderText(/Anthropic API key/)).toBeTruthy()
+    // Setup reopens so the user can fix the key.
+    expect(screen.getByText('Model & keys')).toBeTruthy()
   })
 })
