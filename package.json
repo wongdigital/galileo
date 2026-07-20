@@ -12,6 +12,7 @@
     "typecheck": "tsc --build --force",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:live": "RUN_LIVE=1 vitest run src/main/llm/__tests__/live.eval.test.ts",
     "fetch": "tsx scripts/fetch.mjs",
     "fixtures": "node scripts/fixtures.mjs",
     "scan-franchises": "node scripts/scan-franchises.mjs",
