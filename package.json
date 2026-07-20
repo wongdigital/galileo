@@ -18,13 +18,18 @@
     "enrich": "node --env-file=.env scripts/enrich.mjs"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.16",
+    "@ai-sdk/openai": "^4.0.16",
     "@anthropic-ai/sdk": "^0.112.3",
+    "@openrouter/ai-sdk-provider": "^3.0.0",
     "@tanstack/react-virtual": "^3.14.6",
+    "ai": "^7.0.31",
     "d3-force": "^3.0.0",
     "ical-generator": "^11.0.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-force-graph-2d": "^1.29.1"
+    "react-force-graph-2d": "^1.29.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
