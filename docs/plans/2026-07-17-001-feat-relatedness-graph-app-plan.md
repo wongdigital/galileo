@@ -118,7 +118,7 @@ Carried from origin: any central server, hosted service, accounts, or telemetry;
 
 ## Output Structure
 
-    sdcc-schedule/
+    galileo/
     ├── .gitignore                     # data/raw*, snapshots, keys — before first commit
     ├── electron.vite.config.ts
     ├── package.json

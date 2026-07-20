@@ -18,7 +18,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
 
 export { PROVIDER_LABEL }
 
-const MODEL_STORE_KEY = 'sdcc.chat.models'
+const MODEL_STORE_KEY = 'galileo.chat.models'
 
 export function defaultModels(): Record<ProviderId, string> {
   return { anthropic: MODELS.anthropic[0]!.id, openai: MODELS.openai[0]!.id, openrouter: MODELS.openrouter[0]!.id }

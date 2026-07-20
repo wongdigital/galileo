@@ -8,7 +8,7 @@
  * is somebody else's server and a schedule that changes hourly at worst.
  */
 
-const USER_AGENT = 'sdcc-schedule personal fetcher (roger@wong.digital)'
+const USER_AGENT = 'galileo personal fetcher (roger@wong.digital)'
 
 export interface ScheduleSources {
   ics: string

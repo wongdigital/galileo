@@ -136,7 +136,7 @@ function Shell() {
       <header className="titlebar-drag flex h-[52px] shrink-0 items-center justify-between border-b border-line px-5 pl-20">
         <div className="flex items-baseline gap-2.5">
           <span className="font-display text-[15px] font-semibold tracking-tight text-ink-bright">
-            SDCC Schedule
+            Galileo
           </span>
           <span className="text-[11px] text-ink-faint">2026</span>
         </div>

@@ -9,7 +9,7 @@
  * updates an existing calendar entry instead of duplicating it. Renaming the app
  * (U10) must not touch this string.
  */
-export const ICS_UID_DOMAIN = 'sdcc-schedule'
+export const ICS_UID_DOMAIN = 'galileo'
 
 export type IcsExclusionReason =
   /** Sched flagged it CANCELLED — a star pointing at a dead session. */

@@ -20,7 +20,7 @@ import { buildDataset } from '../src/shared/schedule/index.ts'
 
 const SITE = process.env.SCHED_SITE ?? 'https://comiccon2026.sched.com'
 const TZ = 'America/Los_Angeles'
-const UA = { 'User-Agent': 'sdcc-schedule personal fetcher (roger@wong.digital)' }
+const UA = { 'User-Agent': 'galileo personal fetcher (roger@wong.digital)' }
 
 async function get(path) {
   const res = await fetch(`${SITE}${path}`, { headers: UA })

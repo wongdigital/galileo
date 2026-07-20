@@ -1,8 +1,8 @@
-# sdcc-schedule
+# Galileo
 
 A better way to browse the Comic-Con San Diego program schedule. Sched's site and app are painful; the underlying data is not.
 
-> **Unofficial.** This project is not affiliated with, endorsed by, or connected to San Diego Comic Convention (Comic-Con International) or Sched. Convention program data is fetched from Sched's public endpoints at runtime for personal use and is **never committed to this repository**—see `.gitignore`. Any future code license covers the code only, not convention data.
+> **Unofficial.** This project is not affiliated with, endorsed by, or connected to San Diego Comic Convention (Comic-Con International) or Sched. Convention program data is fetched from Sched's public endpoints at runtime for personal use and is **never committed to this repository**—see `.gitignore`. The AGPL-3.0 license (see `LICENSE`) covers the code only, not convention data.
 
 ## The hybrid data model (read this before contributing)
 

@@ -10,7 +10,7 @@ let base: string
 let store: SnapshotStore
 
 beforeEach(() => {
-  base = mkdtempSync(join(tmpdir(), 'sdcc-store-'))
+  base = mkdtempSync(join(tmpdir(), 'galileo-store-'))
   store = new SnapshotStore(base)
 })
 

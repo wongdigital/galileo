@@ -9,7 +9,7 @@ let base: string
 let store: StarStore
 
 beforeEach(() => {
-  base = mkdtempSync(join(tmpdir(), 'sdcc-stars-'))
+  base = mkdtempSync(join(tmpdir(), 'galileo-stars-'))
   store = new StarStore(base)
 })
 

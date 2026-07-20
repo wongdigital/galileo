@@ -5,7 +5,7 @@
  * Two rules carry most of the value. Alarms follow the event class, not the
  * user's stars — a 15-minute warning for a games room that has been open since
  * 10am is noise, so ambient-class events export without a VALARM (see
- * enrichment/classes.ts). And UIDs are `<sched-uid>@sdcc-schedule`, derived and
+ * enrichment/classes.ts). And UIDs are `<sched-uid>@galileo`, derived and
  * never generated, so re-exporting after the schedule shifts updates the
  * existing calendar entries instead of doubling them.
  */

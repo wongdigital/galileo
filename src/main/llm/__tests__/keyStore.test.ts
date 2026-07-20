@@ -20,7 +20,7 @@ const workingSafe: SafeStorage = {
 let base: string
 
 beforeEach(() => {
-  base = mkdtempSync(join(tmpdir(), 'sdcc-keys-'))
+  base = mkdtempSync(join(tmpdir(), 'galileo-keys-'))
 })
 
 afterEach(() => {

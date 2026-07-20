@@ -1,9 +1,10 @@
 {
-  "name": "sdcc-schedule",
+  "name": "galileo",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
-  "description": "Comic-Con San Diego schedule data pipeline and (eventually) a better schedule app",
+  "description": "Galileo — a better San Diego Comic-Con schedule app",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
