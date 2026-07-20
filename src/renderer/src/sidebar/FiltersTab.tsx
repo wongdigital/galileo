@@ -8,7 +8,7 @@
  * you get less, and the headers told you which was which before you clicked.
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import {
   EMPTY_FILTER,
   FILTER_DIMENSIONS,
@@ -26,33 +26,48 @@ import { valueLabel } from './labels'
  *  genres on it is a rail nobody reads to the bottom of. */
 const VISIBLE_VALUES = 8
 
+/** Facet chips are tri-state on constraint dimensions: off, included (lumen),
+ *  excluded (cancelled, "not" prefixed — the same language the active-chips
+ *  row and the chat compiler use). */
+type ChipState = 'off' | 'on' | 'not'
+
 function Chip({
   chip,
   count,
-  active,
+  state,
+  title,
   onClick,
 }: {
   chip: FilterChip
   count?: number
-  active: boolean
-  onClick: () => void
+  state: ChipState
+  title?: string
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void
 }) {
   return (
     <button
       type="button"
-      aria-pressed={active}
+      aria-pressed={state !== 'off'}
+      title={title}
       onClick={onClick}
       className={[
         'flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-all duration-150',
-        active
+        state === 'on'
           ? 'border-lumen-dim bg-lumen/10 text-ink-bright shadow-[0_0_12px_-4px_var(--color-lumen)]'
-          : 'border-line bg-ground-850 text-ink-dim hover:border-line-strong hover:text-ink',
+          : state === 'not'
+            ? 'border-cancelled/60 bg-cancelled/10 text-ink-bright shadow-[0_0_12px_-4px_var(--color-cancelled)]'
+            : 'border-line bg-ground-850 text-ink-dim hover:border-line-strong hover:text-ink',
       ].join(' ')}
     >
+      {state === 'not' ? <span className="text-cancelled">not</span> : null}
       <span className="truncate">{valueLabel(chip.dimension, chip.value)}</span>
       {count !== undefined ? (
-        <span className={`font-mono text-[10px] ${active ? 'text-lumen' : 'text-ink-fringe'}`}>
-          {count}
+        <span
+          className={`font-mono text-[10px] ${
+            state === 'on' ? 'text-lumen' : state === 'not' ? 'text-cancelled' : 'text-ink-fringe'
+          }`}
+        >
+          {count.toLocaleString()}
         </span>
       ) : null}
     </button>
@@ -90,13 +105,28 @@ function DimensionSection({ dimension }: { dimension: FilterDimension }) {
       <div className="flex flex-wrap gap-1.5">
         {shown.map((option) => {
           const chip: FilterChip = { dimension: option.dimension, value: option.value }
+          const negChip: FilterChip = { ...chip, negated: true }
+          const state: ChipState = hasChip(filter, chip) ? 'on' : hasChip(filter, negChip) ? 'not' : 'off'
+          // Exclusion is constraints-only, mirroring the FilterChip contract:
+          // negating an interest in an additive union would remove nothing.
+          const canNegate = dimension.kind === 'constraint'
           return (
             <Chip
               key={option.value}
               chip={chip}
               count={option.count}
-              active={hasChip(filter, chip)}
-              onClick={() => setFilter(toggleChip(filter, chip))}
+              state={state}
+              title={
+                canNegate
+                  ? state === 'not'
+                    ? '⌥-click to clear the exclusion'
+                    : '⌥-click to exclude'
+                  : undefined
+              }
+              // toggleChip on the opposite sign *replaces* (addChip drops the
+              // twin), so this one call is the whole tri-state machine:
+              // click ↔ include, ⌥-click ↔ exclude, each converting the other.
+              onClick={(e) => setFilter(toggleChip(filter, canNegate && e.altKey ? negChip : chip))}
             />
           )
         })}
@@ -174,7 +204,10 @@ export function FiltersTab() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2.5">
+      {/* h-rail: the second beat — this row, the chat's Concierge row, and the
+          schedule's Open-all-day shelf header share it, so the second hairline
+          is also continuous across the seam. */}
+      <div className="flex h-rail shrink-0 items-center gap-2 border-b border-line px-4">
         <span className="font-mono text-[12px] text-lumen">{filteredCount.toLocaleString()}</span>
         <span className="text-[11px] text-ink-faint">of {totalCount.toLocaleString()}</span>
         <button

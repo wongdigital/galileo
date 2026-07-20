@@ -148,6 +148,19 @@ describe('chip editing', () => {
     expect(negated.chips).toEqual([{ dimension: 'venue', value: 'marriott', negated: true }])
   })
 
+  it('toggleChip on the opposite sign flips rather than stacking — the ⌥-click contract', () => {
+    // The sidebar's tri-state chips lean on this: click targets the positive
+    // twin, ⌥-click the negated one, and toggleChip does the rest.
+    const pos = { dimension: 'venue', value: 'marriott' }
+    const neg = { dimension: 'venue', value: 'marriott', negated: true }
+    const included = toggleChip(EMPTY_FILTER, pos)
+    const excluded = toggleChip(included, neg)
+    expect(excluded.chips).toEqual([neg])
+    const backToIncluded = toggleChip(excluded, pos)
+    expect(backToIncluded.chips).toEqual([pos])
+    expect(toggleChip(backToIncluded, pos).chips).toEqual([])
+  })
+
   it('is a no-op when adding a chip that is already present', () => {
     const chip = { dimension: 'genre', value: 'horror' }
     const on = addChip(EMPTY_FILTER, chip)

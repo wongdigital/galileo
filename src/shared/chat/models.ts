@@ -11,20 +11,28 @@ import type { ModelChoice, ProviderId } from './types'
 
 export const MODELS: Record<ProviderId, ModelChoice[]> = {
   anthropic: [
-    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+    // Dateless ids are Anthropic's rolling aliases for the newest snapshot.
     { id: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
-    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   ],
   openai: [
+    { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+    { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
     { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-    { id: 'gpt-5', label: 'GPT-5' },
-    { id: 'gpt-4.1', label: 'GPT-4.1' },
   ],
   openrouter: [
-    { id: 'anthropic/claude-sonnet-5', label: 'Anthropic: Claude Sonnet 5' },
-    { id: 'anthropic/claude-opus-4.8', label: 'Anthropic: Claude Opus 4.8' },
-    { id: 'openai/gpt-5.6-luna', label: 'OpenAI: GPT-5.6 Luna' },
-    { id: 'google/gemini-2.5-pro', label: 'Google: Gemini 2.5 Pro' },
+    // `~`-prefixed slugs are OpenRouter's rolling "latest" aliases — they
+    // track the newest release so the fallback list never names a stale
+    // version. Slugs verified against /api/v1/models, 2026-07-20.
+    { id: '~anthropic/claude-sonnet-latest', label: 'Anthropic: Claude Sonnet Latest' },
+    { id: '~anthropic/claude-opus-latest', label: 'Anthropic: Claude Opus Latest' },
+    { id: 'deepseek/deepseek-v4-flash', label: 'DeepSeek: DeepSeek V4 Flash' },
+    { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek: DeepSeek V4 Pro' },
+    { id: '~google/gemini-flash-latest', label: 'Google Gemini Flash' },
+    { id: '~google/gemini-pro-latest', label: 'Google Gemini Pro' },
+    { id: '~openai/gpt-latest', label: 'OpenAI GPT Latest' },
+    { id: '~openai/gpt-mini-latest', label: 'OpenAI GPT Mini Latest' },
   ],
 }
 

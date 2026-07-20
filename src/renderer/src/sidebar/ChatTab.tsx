@@ -28,7 +28,7 @@ import {
   type ProviderId,
 } from '@shared/chat'
 import type { ScheduleEvent } from '@shared/schedule'
-import { MODELS, PROVIDER_LABEL, bridge, defaultModels, loadModels, saveModels } from './chatModels'
+import { MODELS, bridge, defaultModels, loadModels, saveModels } from './chatModels'
 import { Bubble, type ChatEntry } from './ChatBubble'
 import { KeySetup } from './ChatKeySetup'
 
@@ -293,17 +293,13 @@ export function ChatTab() {
     void bridge()?.cancelChat()
   }, [])
 
+  // Key presence is three-valued: unknown until the first status load, then
+  // present/absent. The missing-key affordances (red dot, tooltip) key off
+  // "known absent" so they don't flash during startup.
+  const keysMissing = keyStatus !== null && !hasAnyKey
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-2.5">
-        <span className="text-[12px] font-medium text-ink-bright">Concierge</span>
-        {hasAnyKey ? (
-          <span className="rounded-full border border-line bg-ground-850 px-2 py-0.5 text-[10px] text-ink-dim">
-            {PROVIDER_LABEL[provider]}
-          </span>
-        ) : null}
-      </div>
-
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {setupOpen ? (
           <KeySetup
@@ -366,21 +362,28 @@ export function ChatTab() {
             onClick={() => setSetupOpen((v) => !v)}
             aria-label="Model and API keys"
             aria-pressed={setupOpen}
-            title="Model & API keys"
+            title={keysMissing ? 'No API key set — add one to chat' : 'Model & API keys'}
             className={[
-              'rounded-md border px-2 py-1.5 text-[13px] leading-none transition-colors duration-150',
+              // h-8 matches the Send/Stop buttons across the row.
+              'relative flex h-8 w-8 items-center justify-center rounded-md border text-[13px] leading-none transition-colors duration-150',
               setupOpen
                 ? 'border-lumen-dim text-lumen'
                 : 'border-line text-ink-dim hover:border-lumen-dim hover:text-lumen',
             ].join(' ')}
           >
             <span aria-hidden="true">⚙</span>
+            {keysMissing ? (
+              <span
+                aria-hidden="true"
+                className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-cancelled shadow-[0_0_6px_var(--color-cancelled)]"
+              />
+            ) : null}
           </button>
           {sending ? (
             <button
               type="button"
               onClick={stop}
-              className="rounded-md border border-line px-3 py-1.5 text-[12px] text-ink-dim transition-colors duration-150 hover:border-cancelled/60 hover:text-cancelled"
+              className="h-8 rounded-md border border-line px-3 text-[12px] text-ink-dim transition-colors duration-150 hover:border-cancelled/60 hover:text-cancelled"
             >
               Stop
             </button>
@@ -389,7 +392,8 @@ export function ChatTab() {
               type="button"
               onClick={() => void send()}
               disabled={!hasAnyKey || !datasetReady || input.trim().length === 0}
-              className="rounded-md border border-lumen-dim bg-lumen/10 px-3 py-1.5 text-[12px] text-ink-bright transition-colors duration-150 hover:bg-lumen/20 disabled:opacity-40"
+              title={keysMissing ? 'Add a valid LLM API key to chat' : undefined}
+              className="h-8 rounded-md border border-lumen-dim bg-lumen/10 px-3 text-[12px] text-ink-bright transition-colors duration-150 hover:bg-lumen/20 disabled:opacity-40 disabled:hover:bg-lumen/10"
             >
               Send
             </button>
