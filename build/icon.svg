@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Galileo mark: Jupiter and the four Galilean moons, January 1610 — drawn
+  in the entity map's own vocabulary. Jupiter is the hub, the moons are event
+  dots, and faint spokes join them, so the icon is literally a five-node
+  entity map on the Observatory ground.
+
+  Master asset. Regenerate the shipped bitmaps after editing:
+    qlmanage -t -s 1024 -o /tmp build/icon.svg     # renders /tmp/icon.svg.png
+    (then sips down to an iconset and iconutil -c icns — see git history of
+    build/ for the exact loop)
+
+  macOS geometry: 1024 canvas, 824x824 squircle centered with ~185 corner
+  radius, per the Big Sur icon grid. Linux/Windows use the full renders.
+-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- The ground: near-black with a blue cast, never pure black — the same
+         law as the ground-950 token, lit faintly from the upper left. -->
+    <radialGradient id="ground" cx="0.35" cy="0.3" r="1.1">
+      <stop offset="0" stop-color="#131a26"/>
+      <stop offset="0.55" stop-color="#0b0e15"/>
+      <stop offset="1" stop-color="#05070b"/>
+    </radialGradient>
+    <!-- Jupiter's disc: lumen-bright core falling to the instrument cyan. -->
+    <radialGradient id="jupiter" cx="0.42" cy="0.38" r="0.85">
+      <stop offset="0" stop-color="#a6f4ff"/>
+      <stop offset="0.55" stop-color="#8bf0ff"/>
+      <stop offset="1" stop-color="#4fd6e8"/>
+    </radialGradient>
+    <!-- The nebula — the map's designed hub glow, at icon scale. -->
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4fd6e8" stop-opacity="0.5"/>
+      <stop offset="0.55" stop-color="#4fd6e8" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#4fd6e8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="moonglow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#97a1b3" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#97a1b3" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="squircle">
+      <rect x="100" y="100" width="824" height="824" rx="185"/>
+    </clipPath>
+    <clipPath id="jupiterdisc">
+      <circle cx="512" cy="512" r="112"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#ground)"/>
+
+    <!-- Background stars: quiet, asymmetric, ink-fringe territory. -->
+    <g fill="#39414f">
+      <circle cx="242" cy="238" r="5"/>
+      <circle cx="762" cy="716" r="6"/>
+      <circle cx="676" cy="222" r="4"/>
+      <circle cx="312" cy="762" r="4.5"/>
+      <circle cx="812" cy="332" r="3.5"/>
+      <circle cx="196" cy="486" r="3.5"/>
+      <circle cx="548" cy="812" r="3.5"/>
+    </g>
+
+    <!-- The spokes: event–hub edges, lumen-dim at background alpha. -->
+    <g stroke="#2a8494" stroke-opacity="0.45" stroke-width="3">
+      <line x1="512" y1="512" x2="211" y2="621"/>
+      <line x1="512" y1="512" x2="338" y2="575"/>
+      <line x1="512" y1="512" x2="700" y2="444"/>
+      <line x1="512" y1="512" x2="832" y2="396"/>
+    </g>
+
+    <!-- Jupiter: nebula, disc, two translucent bands clipped to the disc. -->
+    <circle cx="512" cy="512" r="300" fill="url(#glow)"/>
+    <circle cx="512" cy="512" r="112" fill="url(#jupiter)"/>
+    <g clip-path="url(#jupiterdisc)" fill="#2a8494">
+      <rect x="380" y="452" width="264" height="26" opacity="0.42" transform="rotate(-8 512 512)"/>
+      <rect x="380" y="548" width="264" height="18" opacity="0.32" transform="rotate(-8 512 512)"/>
+    </g>
+
+    <!-- The four moons — Io, Europa, Ganymede, Callisto — event dots on the
+         observation's diagonal, each with the dot's soft corona. -->
+    <g>
+      <circle cx="211" cy="621" r="66" fill="url(#moonglow)"/>
+      <circle cx="211" cy="621" r="26" fill="#97a1b3"/>
+      <circle cx="338" cy="575" r="48" fill="url(#moonglow)"/>
+      <circle cx="338" cy="575" r="19" fill="#97a1b3"/>
+      <circle cx="700" cy="444" r="54" fill="url(#moonglow)"/>
+      <circle cx="700" cy="444" r="21" fill="#97a1b3"/>
+      <circle cx="832" cy="396" r="70" fill="url(#moonglow)"/>
+      <circle cx="832" cy="396" r="28" fill="#97a1b3"/>
+    </g>
+
+    <!-- The user's own mark: one starred moon, the warm ring against the cold
+         ground — the same gesture the map and the list draw. -->
+    <circle cx="832" cy="396" r="42" fill="none" stroke="#f5c451" stroke-width="6"/>
+  </g>
+
+  <!-- Hairline rim so the squircle reads against pure-white galleries. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="none" stroke="#2b3444" stroke-width="2"/>
+</svg>

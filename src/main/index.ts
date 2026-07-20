@@ -131,6 +131,18 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
+  // Packaged builds carry the mark in icon.icns via electron-builder; in dev
+  // the dock would otherwise show stock Electron, so point it at the same
+  // asset. Guarded twice: dock is macOS-only, and the build/ tree only
+  // exists in a checkout.
+  if (!app.isPackaged && app.dock) {
+    try {
+      app.dock.setIcon(join(__dirname, '../../build/icon.png'))
+    } catch {
+      // A missing or unreadable icon must never stop the app from booting.
+    }
+  }
+
   store = new SnapshotStore(app.getPath('userData'))
   stars = new StarStore(app.getPath('userData'))
   keys = new KeyStore(app.getPath('userData'), safeStorage)
