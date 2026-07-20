@@ -64,7 +64,7 @@ function Chip({
       {count !== undefined ? (
         <span
           className={`font-mono text-[10px] ${
-            state === 'on' ? 'text-lumen' : state === 'not' ? 'text-cancelled' : 'text-ink-fringe'
+            state === 'on' ? 'text-lumen' : state === 'not' ? 'text-cancelled' : 'text-ink-faint'
           }`}
         >
           {count.toLocaleString()}
@@ -97,7 +97,7 @@ function DimensionSection({ dimension }: { dimension: FilterDimension }) {
         <h3 className="text-[11px] font-medium uppercase tracking-[0.14em] text-ink-dim">
           {dimension.label}
         </h3>
-        <span className="text-[10px] text-ink-fringe">
+        <span className="text-[10px] text-ink-faint">
           {dimension.kind === 'interest' ? 'any of' : 'narrow to'}
         </span>
       </div>
@@ -208,8 +208,12 @@ export function FiltersTab() {
           schedule's Open-all-day shelf header share it, so the second hairline
           is also continuous across the seam. */}
       <div className="flex h-rail shrink-0 items-center gap-2 border-b border-line px-4">
-        <span className="font-mono text-[12px] text-lumen">{filteredCount.toLocaleString()}</span>
-        <span className="text-[11px] text-ink-faint">of {totalCount.toLocaleString()}</span>
+        {/* role=status: filter changes announce their result count to
+            assistive tech without stealing focus (SC 4.1.3). */}
+        <span role="status" className="flex items-center gap-2">
+          <span className="font-mono text-[12px] text-lumen">{filteredCount.toLocaleString()}</span>
+          <span className="text-[11px] text-ink-faint">of {totalCount.toLocaleString()}</span>
+        </span>
         <button
           type="button"
           onClick={() => void refresh()}
@@ -226,8 +230,9 @@ export function FiltersTab() {
           type="search"
           value={filter.text}
           onChange={(e) => setFilter({ ...filter, text: e.target.value })}
+          aria-label="Search titles, rooms, descriptions"
           placeholder="Search titles, rooms, descriptions"
-          className="w-full rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12.5px] text-ink placeholder:text-ink-fringe focus:border-lumen-dim focus:outline-none"
+          className="w-full rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12.5px] text-ink placeholder:text-ink-faint focus:border-lumen-dim focus:outline-none"
         />
         <div className="mt-2 flex gap-1.5">
           <Toggle

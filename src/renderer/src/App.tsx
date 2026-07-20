@@ -6,6 +6,7 @@ import { FiltersTab } from './sidebar/FiltersTab'
 import { ChatTab } from './sidebar/ChatTab'
 import { SegmentedThumb } from './components/SegmentedThumb'
 import { useSlidingIndicator } from './components/useSlidingIndicator'
+import { useTheme } from './state/theme'
 import { ScheduleView } from './views/schedule/ScheduleView'
 import { GraphView } from './views/graph/GraphView'
 
@@ -47,6 +48,35 @@ function ViewToggle() {
         )
       })}
     </div>
+  )
+}
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+  const dark = theme === 'dark'
+  return (
+    <button
+      type="button"
+      onClick={() => setTheme(dark ? 'light' : 'dark')}
+      // A toggle whose label names the action, not the state — screen readers
+      // announce exactly what pressing it will do.
+      aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      className="titlebar-no-drag flex h-8 w-8 items-center justify-center rounded-lg border border-line text-ink-dim transition-colors duration-150 hover:border-line-strong hover:text-ink"
+    >
+      {dark ? (
+        // Sun — the destination, not the current state.
+        <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+          <circle cx="8" cy="8" r="3.2" />
+          <path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3" />
+        </svg>
+      ) : (
+        // Moon
+        <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M13.5 9.8A5.8 5.8 0 0 1 6.2 2.5a5.8 5.8 0 1 0 7.3 7.3Z" />
+        </svg>
+      )}
+    </button>
   )
 }
 
@@ -147,7 +177,10 @@ function Shell() {
           </span>
           <span className="text-[11px] text-ink-faint">2026</span>
         </div>
-        <ViewToggle />
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <ViewToggle />
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">

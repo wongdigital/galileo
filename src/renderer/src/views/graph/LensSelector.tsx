@@ -58,7 +58,7 @@ export function LensSelector({ lenses, active, onSelect, degrees = [] }: LensSel
             {degree !== null ? (
               <span
                 className={`font-mono text-[10px] ${
-                  degree === 0 ? 'text-ink-fringe' : isActive ? 'text-lumen' : 'text-ink-faint'
+                  degree === 0 ? 'text-ink-faint' : isActive ? 'text-lumen' : 'text-ink-faint'
                 }`}
               >
                 {degree.toLocaleString()}

@@ -31,14 +31,14 @@ export function GhostBand({ ghosts, onRemove }: GhostBandProps) {
 
       {ghosts.map(({ star, time }) => (
         <div key={star.uid} className="flex items-center gap-3.5 px-4 pb-2">
-          <span className="w-14 shrink-0 text-right font-mono text-[12px] text-ink-fringe line-through">
+          <span className="w-14 shrink-0 text-right font-mono text-[12px] text-ink-faint line-through">
             {time}
           </span>
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="truncate text-[13.5px] leading-tight text-ink-faint line-through decoration-cancelled">
               {star.title || star.uid}
             </span>
-            <span className="truncate text-[11.5px] text-ink-fringe">
+            <span className="truncate text-[11.5px] text-ink-faint">
               {star.room || 'Room unrecorded'} — starred, then pulled from the feed
             </span>
           </span>
@@ -46,7 +46,7 @@ export function GhostBand({ ghosts, onRemove }: GhostBandProps) {
             type="button"
             onClick={() => onRemove(star.uid)}
             title="Remove this star"
-            className="shrink-0 rounded border border-line px-2 py-0.5 text-[11px] text-ink-faint transition-colors duration-150 hover:border-cancelled/50 hover:text-cancelled"
+            className="shrink-0 rounded border border-line px-2 py-1 text-[11px] text-ink-faint transition-colors duration-150 hover:border-cancelled/50 hover:text-cancelled"
           >
             Clear
           </button>

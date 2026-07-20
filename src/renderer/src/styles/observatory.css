@@ -25,11 +25,15 @@
   --color-line: #1c2331;
   --color-line-soft: #141a26;
 
-  /* Type: a precision scale, high contrast at the top, quiet at the bottom */
+  /* Type: a precision scale, high contrast at the top, quiet at the bottom.
+     AA floor (docs/EXCEPTIONS.md): ink-dim ≥7:1 carries sub-12px metadata
+     under the density exception; ink-faint ≥4.5:1 is the quietest ink allowed
+     on text. ink-fringe fails both and is for graphics only — dimmed map
+     nodes, decorative marks — never prose. */
   --color-ink-bright: #eef2f8;
   --color-ink: #c3cbd9;
-  --color-ink-dim: #8a94a6;
-  --color-ink-faint: #5b6474;
+  --color-ink-dim: #97a1b3;
+  --color-ink-faint: #727e93;
   /* Fringe: nodes with no edge under the active lens dim toward the rim (R8) */
   --color-ink-fringe: #39414f;
 
@@ -37,6 +41,15 @@
   --color-lumen: #4fd6e8;
   --color-lumen-bright: #8bf0ff;
   --color-lumen-dim: #2a8494;
+
+  /* Canvas node colors, decoupled from the lumen text scale. Text-lumen has
+     to darken in the light theme to stay readable; nodes must NOT follow it —
+     a luminous instrument draws light marks, whatever the ground. Dark theme:
+     identical to the lumen values the painter always used. */
+  --color-node-hub: #8bf0ff;
+  --color-node-glow: #4fd6e8;
+  --color-node-glow-soft: #2a8494;
+  --color-node-event: #97a1b3;
 
   /* Signal colors, each earning its place:
      star = the user's own mark, warm against the cold ground
@@ -60,11 +73,60 @@
   --duration-card: 260ms;
   --duration-card-out: 200ms; /* closes read faster than opens — the eye has seen the card already */
 
+  /* Elevation — the docked cards' drop. Near-black in the dark theme;
+     the light theme overrides to a soft slate so paper doesn't get soot. */
+  --color-card-shadow: rgba(0, 0, 0, 0.9);
+
   /* Spatial rhythm — the titlebar sets a 52px beat. Chrome rows directly
      below it (sidebar tab row, day rail, graph toolbar) share the height,
      so their bottom hairlines draw one continuous line across the
      sidebar/main seam instead of three near-misses (U9). */
   --spacing-rail: 52px;
+}
+
+/* Daylight theme — the same instrument in a lit room. Token roles are
+   unchanged (950 backmost … 700 raised thumb; ink runs bright→faint), only
+   their values flip, so every utility and the canvas painter follow without
+   edits. All pairs re-verified against the AA floor: text inks ≥4.5:1,
+   ink-dim ≥7:1 (density exception), lumen ≥4.5:1 as text and ≥3:1 as the
+   focus ring, lumen-dim ≥3:1 as a border. */
+:root[data-theme='light'] {
+  --color-ground-950: #f6f8fb;
+  --color-ground-900: #eef1f6;
+  --color-ground-850: #ffffff;
+  --color-ground-800: #e6ebf2;
+  --color-ground-700: #dbe2ec;
+  --color-ground-600: #b9c4d4;
+
+  --color-line-strong: #aab6c6;
+  --color-line: #ccd4e0;
+  --color-line-soft: #dde3ec;
+
+  --color-ink-bright: #16202e;
+  --color-ink: #2c3a4e;
+  --color-ink-dim: #414f66;
+  --color-ink-faint: #5a6a80;
+  --color-ink-fringe: #8d99ab;
+
+  --color-lumen: #0c7285;
+  --color-lumen-bright: #095e6f;
+  --color-lumen-dim: #38909f;
+
+  /* Nodes stay light on paper — medium blue marks, pale halos — rather than
+     following text-lumen down (docs/EXCEPTIONS.md: below the 3:1 graphics
+     floor by explicit choice; the list view is the primary surface). */
+  --color-node-hub: #4f9dc7;
+  --color-node-glow: #c3e2f2;
+  --color-node-glow-soft: #a9d3e8;
+  /* Dots keep dark mode's relationship — quieter, grayer than the hub blue. */
+  --color-node-event: #84a0b6;
+
+  --color-star: #a87c00;
+  --color-moved: #8a5d0e;
+  --color-cancelled: #b23a50;
+  --color-new: #177753;
+
+  --color-card-shadow: rgba(23, 32, 46, 0.28);
 }
 
 @layer base {

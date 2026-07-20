@@ -66,7 +66,7 @@ export function StateBadge({ state }: { state: RowState }) {
   const style = STATE_STYLE[state]
   return (
     <span
-      className={`rounded border px-1.5 py-px font-mono text-[9px] font-medium tracking-[0.1em] ${style.className}`}
+      className={`rounded border px-1.5 py-px font-mono text-[10px] font-medium tracking-[0.1em] ${style.className}`}
     >
       {style.label}
     </span>
@@ -150,10 +150,22 @@ interface CardShellProps {
 export function CardShell({ eyebrow, dismissLabel, onDismiss, children }: CardShellProps) {
   const motion = useCardMotion()
   const closing = motion?.closing ?? false
+
+  // Escape closes the card from anywhere — keyboard parity with the canvas
+  // background click (docs/A11Y-DECISIONS.md: non-modal panel, no focus trap).
+  useEffect(() => {
+    if (closing) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onDismiss()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [closing, onDismiss])
+
   return (
     <aside
       className={[
-        'pointer-events-auto absolute right-4 bottom-4 z-10 flex max-h-[min(70%,28rem)] w-[320px] flex-col rounded-xl border border-line-strong bg-ground-850/95 p-3.5 shadow-[0_18px_40px_-20px_rgba(0,0,0,0.9)] backdrop-blur',
+        'pointer-events-auto absolute right-4 bottom-4 z-10 flex max-h-[min(70%,28rem)] w-[320px] flex-col rounded-xl border border-line-strong bg-ground-850/95 p-3.5 shadow-[0_18px_40px_-20px_var(--color-card-shadow)] backdrop-blur',
         // Middle-out wipe on mount; the reverse plays while CardPresence holds
         // the card in the tree, then onExited lets it unmount (U9).
         closing ? 'card-conceal' : 'card-reveal',
@@ -172,7 +184,8 @@ export function CardShell({ eyebrow, dismissLabel, onDismiss, children }: CardSh
           type="button"
           onClick={onDismiss}
           aria-label={dismissLabel}
-          className="-m-1 rounded p-1 text-ink-faint transition-colors hover:text-ink"
+          // 24×24 hit area (SC 2.5.8) with the visual glyph staying small.
+          className="-m-2 flex h-6 w-6 items-center justify-center rounded text-ink-faint transition-colors hover:text-ink"
         >
           <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden="true">
             <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -336,14 +349,14 @@ export function EventCard({ uid, onDismiss }: EventCardProps) {
             data-testid="event-source-tags"
           >
             {track ? (
-              <span className="rounded border border-line px-1.5 py-px font-mono text-[9.5px] tracking-[0.08em] text-ink-dim">
+              <span className="rounded border border-line px-1.5 py-px font-mono text-[10px] tracking-[0.08em] text-ink-dim">
                 {track}
               </span>
             ) : null}
             {shownSubtypes.map((subtype) => (
               <span
                 key={subtype}
-                className="rounded border border-line-soft px-1.5 py-px font-mono text-[9.5px] text-ink-faint"
+                className="rounded border border-line-soft px-1.5 py-px font-mono text-[10px] text-ink-faint"
               >
                 {subtype}
               </span>
@@ -351,7 +364,7 @@ export function EventCard({ uid, onDismiss }: EventCardProps) {
             {hiddenSubtypes.length > 0 ? (
               <span
                 title={hiddenSubtypes.join(', ')}
-                className="rounded border border-line-soft px-1.5 py-px font-mono text-[9.5px] text-ink-fringe"
+                className="rounded border border-line-soft px-1.5 py-px font-mono text-[10px] text-ink-faint"
               >
                 +{hiddenSubtypes.length}
               </span>

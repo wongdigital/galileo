@@ -80,7 +80,11 @@ export function Bubble({
           ].join(' ')}
         >
           {entry.streaming && !entry.message.content ? (
-            <span className="animate-pulse italic text-ink-faint">{entry.status ?? 'Thinking…'}</span>
+            // role=status: tool-loop progress ("Searching the schedule…")
+            // reaches assistive tech, not just sighted eyes (SC 4.1.3).
+            <span role="status" className="animate-pulse italic text-ink-faint motion-reduce:animate-none">
+              {entry.status ?? 'Thinking…'}
+            </span>
           ) : (
           <Markdown
             components={{

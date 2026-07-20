@@ -336,7 +336,9 @@ export function ChatTab() {
       </div>
 
       {error ? (
-        <p className="shrink-0 border-t border-line px-4 py-2 text-[11.5px] text-cancelled">{error}</p>
+        <p role="alert" className="shrink-0 border-t border-line px-4 py-2 text-[11.5px] text-cancelled">
+          {error}
+        </p>
       ) : null}
 
       <div className="shrink-0 border-t border-line px-3 py-3">
@@ -351,10 +353,11 @@ export function ChatTab() {
           }}
           disabled={!hasAnyKey || !datasetReady || sending}
           rows={2}
+          aria-label="Message the concierge"
           placeholder={
             !hasAnyKey ? 'Add an API key to start' : !datasetReady ? 'Loading the schedule…' : 'Ask, filter, or plan…'
           }
-          className="w-full resize-none rounded-md border border-line bg-ground-850 px-2.5 py-2 text-[12.5px] text-ink placeholder:text-ink-fringe focus:border-lumen-dim focus:outline-none disabled:opacity-50"
+          className="w-full resize-none rounded-md border border-line bg-ground-850 px-2.5 py-2 text-[12.5px] text-ink placeholder:text-ink-faint focus:border-lumen-dim focus:outline-none disabled:opacity-50"
         />
         <div className="mt-2 flex items-center justify-between">
           <button

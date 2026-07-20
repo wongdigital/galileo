@@ -113,6 +113,13 @@ Conventional commits with a scope naming the subsystem: `feat(chat):`, `fix(grap
 `test(chat):`, `chore:`. Subject lines describe what changed for a reader, not which files
 moved.
 
+## Accessibility
+
+Follow strictly the accessibility rules defined in the file: https://github.com/fecarrico/A11Y.md/blob/main/docs/en/A11Y.md
+
+Target profile: **Standard (AA)**. Decisions between conformant alternatives are logged in
+`docs/A11Y-DECISIONS.md`; deliberate relaxations (with mitigations) in `docs/EXCEPTIONS.md`.
+
 ## Gotchas
 
 - Vite is pinned to `^7` and `@vitejs/plugin-react` to `^5`. electron-vite 5 peers Vite ≤7

@@ -61,6 +61,7 @@ import {
 import { LENS_LABEL, LensSelector } from './LensSelector'
 import { MiniMap } from './MiniMap'
 import { linkColor, linkWidth, nodeRadius, paintMapNode } from './paint'
+import { useTheme } from '@renderer/state/theme'
 import { useNodeCache, type GraphLinkObject, type GraphNodeObject } from './useNodeCache'
 
 /** Stop the settle early rather than running it to convergence. Object
@@ -150,6 +151,9 @@ function entityLabel(entity: GraphEntity): string {
 
 export function GraphView() {
   const { lens, setLens, selectedUid, setSelectedUid } = useSpine()
+  // Read so a theme switch re-renders this view and repaints both canvases
+  // (see the `paint` dependency note and MiniMap's draw effect).
+  const { theme } = useTheme()
   const map = useEntityMap()
 
   const engine = useRef<ForceGraphMethods<GraphNodeObject, GraphLinkObject> | undefined>(undefined)
@@ -422,7 +426,12 @@ export function GraphView() {
         )
       }
     },
-    [lit, pinnedNodeId],
+    // `theme` is not read in the body — it is here because the library's
+    // autoPauseRedraw idles the canvas once the simulation settles, and a new
+    // callback identity is the prop change that wakes it. Without it a theme
+    // switch leaves the settled graph painted in the old palette until the
+    // next pan or hover.
+    [lit, pinnedNodeId, theme],
   )
 
   const nodeTooltip = useCallback((node: GraphNodeObject) => {
@@ -598,7 +607,7 @@ export function GraphView() {
         </CardPresence>
 
         {!map.indexReady ? (
-          <span className="absolute top-3 left-4 font-mono text-[10px] text-ink-fringe">
+          <span role="status" className="absolute top-3 left-4 font-mono text-[10px] text-ink-faint">
             loading people and franchises…
           </span>
         ) : null}

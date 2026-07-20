@@ -18,6 +18,7 @@
  */
 
 import { useEffect, useRef, type RefObject } from 'react'
+import { useTheme } from '@renderer/state/theme'
 import type { ForceGraphMethods } from 'react-force-graph-2d'
 import { palette, withAlpha } from './paint'
 import type { GraphLinkObject, GraphNodeObject } from './useNodeCache'
@@ -53,6 +54,9 @@ export function MiniMap({ nodes, engine, viewWidth, viewHeight }: MiniMapProps) 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const mapping = useRef<Mapping | null>(null)
   const dragging = useRef(false)
+  // A theme switch redefines the tokens this canvas painted with; reading the
+  // theme here puts it in the draw effect's deps so the mini-map repaints.
+  const { theme } = useTheme()
 
   useEffect(() => {
     const draw = (): void => {
@@ -96,13 +100,13 @@ export function MiniMap({ nodes, engine, viewWidth, viewHeight }: MiniMapProps) 
         if (node.x === undefined || node.y === undefined) continue
         if (node.model.kind !== 'event') continue
         ctx.fillStyle =
-          node.model.fringe ? withAlpha(colors.fringe, 0.45) : withAlpha(colors.inkDim, 0.8)
+          node.model.fringe ? withAlpha(colors.fringe, 0.45) : withAlpha(colors.nodeEvent, 0.8)
         ctx.fillRect(toMiniX(node.x) - 0.75, toMiniY(node.y) - 0.75, 1.5, 1.5)
       }
       for (const node of nodes) {
         if (node.x === undefined || node.y === undefined) continue
         if (node.model.kind !== 'entity') continue
-        ctx.fillStyle = colors.lumen
+        ctx.fillStyle = colors.nodeHub
         ctx.fillRect(toMiniX(node.x) - 1.25, toMiniY(node.y) - 1.25, 2.5, 2.5)
       }
 
@@ -126,7 +130,7 @@ export function MiniMap({ nodes, engine, viewWidth, viewHeight }: MiniMapProps) 
     draw()
     const timer = window.setInterval(draw, REDRAW_MS)
     return () => window.clearInterval(timer)
-  }, [nodes, engine, viewWidth, viewHeight])
+  }, [nodes, engine, viewWidth, viewHeight, theme])
 
   /** A press is a jump, a drag is a continuous pan — both are just "center the
    *  view where the pointer says", instantly (0ms: an animated pan would lag

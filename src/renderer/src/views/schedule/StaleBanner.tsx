@@ -34,14 +34,14 @@ export function StaleBanner() {
   return (
     <div className="flex flex-col">
       {warning ? (
-        <div className="flex items-center gap-3 border-b border-moved/30 bg-moved/10 px-4 py-2">
+        <div role="status" className="flex items-center gap-3 border-b border-moved/30 bg-moved/10 px-4 py-2">
           <span className="text-[12px] text-moved">
             New data looks wrong — {warning.detail}. Showing the last known good schedule.
           </span>
           <button
             type="button"
             onClick={() => void refresh({ acceptAnyway: true })}
-            className="ml-auto shrink-0 rounded border border-moved/50 px-2 py-0.5 text-[11px] text-moved transition-colors duration-150 hover:bg-moved/15"
+            className="ml-auto shrink-0 rounded border border-moved/50 px-2 py-1 text-[11px] text-moved transition-colors duration-150 hover:bg-moved/15"
           >
             Accept new data anyway
           </button>

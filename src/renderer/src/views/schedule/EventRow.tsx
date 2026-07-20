@@ -21,7 +21,7 @@ function StateBadge({ state }: { state: RowState }) {
   const style = STATE_STYLE[state]
   return (
     <span
-      className={`rounded border px-1.5 py-px font-mono text-[9px] font-medium tracking-[0.1em] ${style.className}`}
+      className={`rounded border px-1.5 py-px font-mono text-[10px] font-medium tracking-[0.1em] ${style.className}`}
     >
       {style.label}
     </span>

@@ -48,9 +48,11 @@ export function AmbientShelf({ rows, onSelect, onToggleStar, selectedUid }: Ambi
         </span>
         <span className="font-mono text-[11px] text-ink-faint">{rows.length.toLocaleString()}</span>
         {starred > 0 ? (
-          <span className="font-mono text-[11px] text-star">★ {starred.toLocaleString()}</span>
+          <span className="font-mono text-[11px] text-ink-dim">
+            <span aria-hidden="true" className="text-star">★</span> {starred.toLocaleString()} starred
+          </span>
         ) : null}
-        <span className="ml-auto text-[11px] text-ink-fringe">
+        <span className="ml-auto text-[11px] text-ink-faint">
           drop-in — no start time to make
         </span>
       </button>

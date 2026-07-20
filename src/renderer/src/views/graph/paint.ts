@@ -47,6 +47,12 @@ export interface Palette {
   lumen: string
   lumenBright: string
   lumenDim: string
+  /** Node marks decouple from the lumen text scale: text darkens in the light
+   *  theme for contrast, nodes stay light — an instrument draws light marks. */
+  nodeHub: string
+  nodeGlow: string
+  nodeGlowSoft: string
+  nodeEvent: string
   star: string
   moved: string
   cancelled: string
@@ -60,6 +66,13 @@ export interface Palette {
 
 let cached: Palette | null = null
 
+/** Theme switches change the tokens under us; the next palette() call
+ *  re-reads. The force simulation repaints every frame, so the canvas picks
+ *  the new palette up within a tick of the switch. */
+export function resetPalette(): void {
+  cached = null
+}
+
 /** Read once, after stylesheets have applied. Cheap enough to be lazy and
  *  wrong enough to be worth not doing at module scope. */
 export function palette(): Palette {
@@ -70,6 +83,10 @@ export function palette(): Palette {
     lumen: token('--color-lumen'),
     lumenBright: token('--color-lumen-bright'),
     lumenDim: token('--color-lumen-dim'),
+    nodeHub: token('--color-node-hub'),
+    nodeGlow: token('--color-node-glow'),
+    nodeGlowSoft: token('--color-node-glow-soft'),
+    nodeEvent: token('--color-node-event'),
     star: token('--color-star'),
     moved: token('--color-moved'),
     cancelled: token('--color-cancelled'),
@@ -173,19 +190,19 @@ function paintHub(
   // treatment is U9's brief (R13) — this only decides how much of the existing
   // one a given hub gets.
   if (!node.dimmed) {
-    ctx.shadowColor = colors.lumen
+    ctx.shadowColor = colors.nodeGlow
     ctx.shadowBlur = Math.min(24, 6 + node.degree)
   }
   ctx.beginPath()
   ctx.arc(x, y, r, 0, Math.PI * 2)
-  ctx.fillStyle = colors.lumenBright
+  ctx.fillStyle = colors.nodeHub
   ctx.fill()
   ctx.shadowBlur = 0
 
   if (node.pinned) {
     ctx.beginPath()
     ctx.arc(x, y, r + 4, 0, Math.PI * 2)
-    ctx.strokeStyle = colors.lumenBright
+    ctx.strokeStyle = colors.nodeHub
     ctx.lineWidth = 1.2
     ctx.setLineDash([2, 2])
     ctx.stroke()
@@ -215,14 +232,14 @@ function paintEvent(
   // Fringe dots recede by losing the glow and half their opacity — never by
   // being dropped. R5 is explicit that they stay hoverable.
   if (!node.fringe && !node.dimmed) {
-    ctx.shadowColor = colors.lumenDim
+    ctx.shadowColor = colors.nodeGlowSoft
     ctx.shadowBlur = 8
   }
   if (node.fringe) ctx.globalAlpha *= FRINGE_ALPHA
 
   ctx.beginPath()
   ctx.arc(x, y, r, 0, Math.PI * 2)
-  ctx.fillStyle = cancelled ? colors.cancelled : node.fringe ? colors.fringe : colors.inkDim
+  ctx.fillStyle = cancelled ? colors.cancelled : node.fringe ? colors.fringe : colors.nodeEvent
   ctx.fill()
   ctx.shadowBlur = 0
 
@@ -238,7 +255,7 @@ function paintEvent(
   if (node.pinned) {
     ctx.beginPath()
     ctx.arc(x, y, r + 5.5, 0, Math.PI * 2)
-    ctx.strokeStyle = colors.lumenBright
+    ctx.strokeStyle = colors.nodeHub
     ctx.lineWidth = 0.8
     ctx.setLineDash([2, 2])
     ctx.stroke()

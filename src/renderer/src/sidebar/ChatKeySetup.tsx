@@ -108,7 +108,7 @@ export function KeySetup({
             type="button"
             onClick={onRefreshModels}
             title="Refresh the model list from the provider"
-            className="text-ink-fringe transition-colors duration-150 hover:text-lumen"
+            className="text-ink-faint transition-colors duration-150 hover:text-lumen"
           >
             ↻
           </button>
@@ -173,7 +173,7 @@ export function KeySetup({
         {note ? <span className="text-[11px] text-ink-faint">{note}</span> : null}
       </div>
 
-      <p className="text-[10.5px] leading-relaxed text-ink-fringe">
+      <p className="text-[10.5px] leading-relaxed text-ink-faint">
         Keys are stored encrypted on this machine. Event descriptions are sent to your chosen
         provider when you ask about them.
       </p>

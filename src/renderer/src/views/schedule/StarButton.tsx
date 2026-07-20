@@ -38,7 +38,7 @@ export function StarButton({ starred, onToggle, label, muted = false }: StarButt
               ? muted
                 ? 'opacity-50'
                 : ''
-              : 'text-ink-fringe transition-colors group-hover/star:text-ink-dim'
+              : 'text-ink-faint transition-colors group-hover/star:text-ink-dim'
           }
         />
       </svg>
