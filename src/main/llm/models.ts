@@ -73,25 +73,30 @@ export async function listModels(
   fetchImpl: FetchLike = fetch as unknown as FetchLike,
 ): Promise<ModelChoice[]> {
   try {
-    if (provider === 'openrouter') {
-      const res = await fetchImpl('https://openrouter.ai/api/v1/models')
-      return res.ok ? normalizeOpenRouter(await res.json()) : []
+    // Exhaustive over ProviderId with no default, so a new provider fails to
+    // compile here instead of silently falling through to an OpenAI query.
+    switch (provider) {
+      case 'openrouter': {
+        const res = await fetchImpl('https://openrouter.ai/api/v1/models')
+        return res.ok ? normalizeOpenRouter(await res.json()) : []
+      }
+      case 'anthropic': {
+        // Cannot list without the key.
+        if (!apiKey) return []
+        const res = await fetchImpl('https://api.anthropic.com/v1/models?limit=100', {
+          headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        })
+        return res.ok ? normalizeAnthropic(await res.json()) : []
+      }
+      case 'openai': {
+        // Cannot list without the key.
+        if (!apiKey) return []
+        const res = await fetchImpl('https://api.openai.com/v1/models', {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        })
+        return res.ok ? normalizeOpenAI(await res.json()) : []
+      }
     }
-
-    // Anthropic and OpenAI cannot list without the key.
-    if (!apiKey) return []
-
-    if (provider === 'anthropic') {
-      const res = await fetchImpl('https://api.anthropic.com/v1/models?limit=100', {
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      })
-      return res.ok ? normalizeAnthropic(await res.json()) : []
-    }
-
-    const res = await fetchImpl('https://api.openai.com/v1/models', {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    })
-    return res.ok ? normalizeOpenAI(await res.json()) : []
   } catch {
     // Offline or a malformed body: defer to the renderer's curated fallback.
     return []

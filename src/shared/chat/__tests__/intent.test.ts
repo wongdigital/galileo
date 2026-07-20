@@ -45,6 +45,13 @@ describe('applyFilterIntent', () => {
     expect(next.chips).toEqual([])
   })
 
+  it('removes a chip case-insensitively — model emits "horror", chip stored "Horror"', () => {
+    const next = applyFilterIntent(base, {
+      remove: [{ dimension: 'genre', value: 'horror' }],
+    })
+    expect(next.chips).toEqual([])
+  })
+
   it('clear resets to empty before applying the rest', () => {
     const next = applyFilterIntent(base, {
       clear: true,

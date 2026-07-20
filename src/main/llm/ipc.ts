@@ -14,9 +14,33 @@
 import { runChatTurn } from './loop'
 import { listModels } from './models'
 import type { KeyStore } from './keyStore'
-import type { ChatRequest, ProviderId } from '../../shared/chat'
+import { PROVIDERS } from '../../shared/chat'
+import type { ChatRequest, ChatResponse, ProviderId } from '../../shared/chat'
 import type { FilterCandidate } from '../../shared/filter/types'
 import type { ScheduleEvent } from '../../shared/schedule'
+
+/** The renderer's payloads cross an untyped IPC boundary; a compromised or buggy
+ *  renderer could send anything. Validate the provider is one we know before it
+ *  reaches the key store or a provider fetch. */
+function isProviderId(value: unknown): value is ProviderId {
+  return typeof value === 'string' && (PROVIDERS as readonly string[]).includes(value)
+}
+
+/** Minimal shape check for a chat request — enough to keep a malformed payload
+ *  from reaching the tool loop as a structured error rather than a raw throw. */
+function isChatRequest(value: unknown): value is ChatRequest {
+  if (!value || typeof value !== 'object') return false
+  const req = value as Record<string, unknown>
+  if (!isProviderId(req.provider)) return false
+  if (!Array.isArray(req.messages)) return false
+  return req.messages.every((m) => {
+    if (!m || typeof m !== 'object') return false
+    const msg = m as Record<string, unknown>
+    return (msg.role === 'user' || msg.role === 'assistant') && typeof msg.content === 'string'
+  })
+}
+
+const MALFORMED: ChatResponse = { ok: false, error: { kind: 'provider', message: 'malformed request' } }
 
 /** Minimal `ipcMain`, typed structurally to keep `electron` out of the module. */
 export interface LlmIpcHost {
@@ -40,7 +64,8 @@ export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
   ipcMain.handle('llm:key:status', () => deps.keyStore.status())
 
   ipcMain.handle('llm:key:set', (_event, ...args: unknown[]) => {
-    const { provider, key } = (args[0] ?? {}) as { provider: ProviderId; key: string }
+    const { provider, key } = (args[0] ?? {}) as { provider: unknown; key: string }
+    if (!isProviderId(provider)) return { ok: false as const, message: 'unknown provider' }
     try {
       return { ok: true as const, status: deps.keyStore.set(provider, key) }
     } catch (error) {
@@ -49,12 +74,15 @@ export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
   })
 
   ipcMain.handle('llm:key:clear', (_event, ...args: unknown[]) => {
-    const { provider } = (args[0] ?? {}) as { provider: ProviderId }
+    const { provider } = (args[0] ?? {}) as { provider: unknown }
+    // An unknown provider is a no-op: report the current status unchanged.
+    if (!isProviderId(provider)) return deps.keyStore.status()
     return deps.keyStore.clear(provider)
   })
 
   ipcMain.handle('llm:models', (_event, ...args: unknown[]) => {
-    const provider = args[0] as ProviderId
+    const provider = args[0]
+    if (!isProviderId(provider)) return []
     // OpenRouter lists publicly; the other two need the stored key.
     return listModels(provider, deps.keyStore.get(provider) ?? undefined)
   })
@@ -65,7 +93,10 @@ export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
     return { received: candidates.length }
   })
 
-  ipcMain.handle('llm:chat', async (event, ...args: unknown[]) => {
+  ipcMain.handle('llm:chat', async (event, ...args: unknown[]): Promise<ChatResponse> => {
+    // Reject a malformed payload before it supersedes a live turn or reaches the
+    // loop as an unstructured throw.
+    if (!isChatRequest(args[0])) return MALFORMED
     // One turn in flight per window; a new send supersedes any prior straggler.
     inflight?.abort(new Error('superseded'))
     const controller = new AbortController()
@@ -80,10 +111,20 @@ export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
           getEvents: deps.getEvents,
           getCandidates: () => candidates,
           signal: controller.signal,
-          onDelta: sender ? (delta) => sender.send('llm:chat:delta', delta) : undefined,
+          // Guard on this turn's own controller so a superseded straggler cannot
+          // stream deltas into the window a newer turn now owns.
+          onDelta: sender
+            ? (delta) => {
+                if (!controller.signal.aborted) sender.send('llm:chat:delta', delta)
+              }
+            : undefined,
         },
-        args[0] as ChatRequest,
+        args[0],
       )
+    } catch (error) {
+      // No unstructured IPC rejection should escape; surface it as a provider
+      // error the tab renders in place.
+      return { ok: false, error: { kind: 'provider', message: error instanceof Error ? error.message : String(error) } }
     } finally {
       clearTimeout(timeout)
       if (inflight === controller) inflight = null

@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
-import { normalizeStars, toggleStar, unstar, type StarRecord } from '@shared/stars'
+import { normalizeStars, starFromEvent, toggleStar, unstar, type StarRecord } from '@shared/stars'
 import { EMPTY_FILTER, type FilterState } from '@shared/filter'
 import type { LensId } from '@shared/graph'
 
@@ -56,6 +56,10 @@ export interface SpineState {
   /** Set when a star write did not land — see the echo-back note below. */
   starError: string | null
   toggleStar: (event: ScheduleEvent) => Promise<void>
+  /** Star many events in one persist, folding them into the current list and
+   *  skipping any already starred. Returns the echoed-back persisted list so a
+   *  caller can confirm which uids actually landed. */
+  starMany: (events: ScheduleEvent[]) => Promise<StarRecord[]>
   /** Unstar by UID alone, which is the only way to clear a ghost. */
   removeStar: (uid: string) => Promise<void>
 
@@ -149,11 +153,11 @@ export function SpineProvider({ children }: { children: ReactNode }) {
    * immediately as the star popping back off — visible now, rather than as a
    * starred list that looked fine all weekend and was empty after a restart.
    */
-  const persistStars = useCallback(async (next: StarRecord[], expectUid?: string, expectStarred?: boolean) => {
+  const persistStars = useCallback(async (next: StarRecord[], expectUid?: string, expectStarred?: boolean): Promise<StarRecord[]> => {
     const api = bridge()
     if (!api) {
       setStarError('No Electron bridge — stars cannot be saved.')
-      return
+      return stars
     }
     setStars(next) // optimistic, so the row responds to the click immediately
     try {
@@ -163,23 +167,42 @@ export function SpineProvider({ children }: { children: ReactNode }) {
         expectUid === undefined ||
         persisted.some((s) => s.uid === expectUid) === (expectStarred ?? true)
       setStarError(landed ? null : 'Star did not save — check disk permissions.')
+      return persisted
     } catch (error) {
       const api2 = bridge()
       setStarError(message(error))
       // Re-read rather than keeping the optimistic list: on-disk truth is the
       // only thing that survives a restart, so it is the only thing to show.
       try {
-        if (api2) setStars(normalizeStars(await api2.stars.get()))
+        if (api2) {
+          const reread = normalizeStars(await api2.stars.get())
+          setStars(reread)
+          return reread
+        }
       } catch {
         // Nothing further to try; starError already says the write is unsafe.
       }
+      return stars
     }
-  }, [])
+  }, [stars])
 
   const toggleStarFor = useCallback(
     async (event: ScheduleEvent) => {
       const wasStarred = stars.some((s) => s.uid === event.uid)
       await persistStars(toggleStar(stars, event, new Date().toISOString()), event.uid, !wasStarred)
+    },
+    [persistStars, stars],
+  )
+
+  const starManyFor = useCallback(
+    async (events: ScheduleEvent[]): Promise<StarRecord[]> => {
+      const now = new Date().toISOString()
+      let next = stars
+      for (const event of events) {
+        if (!next.some((s) => s.uid === event.uid)) next = [...next, starFromEvent(event, now)]
+      }
+      if (next === stars) return stars
+      return persistStars(next)
     },
     [persistStars, stars],
   )
@@ -219,6 +242,7 @@ export function SpineProvider({ children }: { children: ReactNode }) {
       stars,
       starError,
       toggleStar: toggleStarFor,
+      starMany: starManyFor,
       removeStar,
       filter,
       setFilter,
@@ -238,6 +262,7 @@ export function SpineProvider({ children }: { children: ReactNode }) {
       stars,
       starError,
       toggleStarFor,
+      starManyFor,
       removeStar,
       filter,
       activeDay,

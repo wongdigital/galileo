@@ -28,10 +28,14 @@ export function applyFilterIntent(current: FilterState, intent: FilterIntent): F
   }
 
   for (const target of intent.remove ?? []) {
+    // Value casing drifts between what the model emits and the corpus token the
+    // chip stored ("horror" vs "Horror"), so match it case-insensitively;
+    // dimension is a fixed key and stays exact.
+    const wantValue = target.value.toLowerCase()
     next = {
       ...next,
       chips: next.chips.filter(
-        (c) => !(c.dimension === target.dimension && c.value === target.value),
+        (c) => !(c.dimension === target.dimension && c.value.toLowerCase() === wantValue),
       ),
     }
   }

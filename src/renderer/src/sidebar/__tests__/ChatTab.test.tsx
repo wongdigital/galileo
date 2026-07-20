@@ -110,6 +110,16 @@ function SelectionProbe() {
   return <div data-testid="sel">{selectedUid ?? ''}</div>
 }
 
+function StateProbe() {
+  const { view, lens } = useSpine()
+  return (
+    <div>
+      <span data-testid="view">{view}</span>
+      <span data-testid="lens">{lens}</span>
+    </div>
+  )
+}
+
 async function mount() {
   const view = render(
     <SpineProvider>
@@ -123,7 +133,10 @@ async function mount() {
 }
 
 async function sendMessage(text: string) {
-  const box = screen.getByPlaceholderText('Ask, filter, or plan…') as HTMLTextAreaElement
+  // The composer stays disabled until the first dataset sync lands; the ready
+  // placeholder only appears once it does, so this also waits out that gate.
+  const box = (await screen.findByPlaceholderText('Ask, filter, or plan…')) as HTMLTextAreaElement
+  await waitFor(() => expect(box.disabled).toBe(false))
   fireEvent.change(box, { target: { value: text } })
   fireEvent.click(screen.getByRole('button', { name: 'Send' }))
 }
@@ -308,6 +321,35 @@ describe('ChatTab', () => {
     await waitFor(() => expect(screen.getByText(/finished without a reply/)).toBeTruthy())
   })
 
+  it('drops the streaming placeholder and surfaces the error when the chat call rejects', async () => {
+    chat.mockRejectedValue(new Error('boom'))
+    await mount()
+    await sendMessage('hi')
+    // The catch branch sets the error banner and removes the empty placeholder.
+    await waitFor(() => expect(screen.getByText('boom')).toBeTruthy())
+    expect(screen.queryByText('Thinking…')).toBeNull()
+  })
+
+  it('ignores a stray delta that arrives after the turn is finalized', async () => {
+    let settle: (r: import('@shared/chat').ChatResponse) => void = () => {}
+    chat.mockReturnValue(new Promise((resolve) => { settle = resolve }))
+    await mount()
+    await sendMessage('when is the panel')
+
+    // Grab the live delta callback before the resolving turn unsubscribes it.
+    const stray = deltaCb!
+    await act(async () => deltaCb?.({ text: 'streamed ' }))
+    await act(async () => {
+      settle({ ok: true, turn: { message: { role: 'assistant', content: 'Final answer.' }, eventUids: [], toolTrace: [] } })
+    })
+    expect(screen.getByText('Final answer.')).toBeTruthy()
+
+    // A delta landing after finalize must not mutate the finalized bubble.
+    await act(async () => stray({ text: ' LATE' }))
+    expect(screen.getByText('Final answer.')).toBeTruthy()
+    expect(screen.queryByText(/LATE/)).toBeNull()
+  })
+
   it('surfaces a rejected key and opens the key panel', async () => {
     chat.mockResolvedValue({ ok: false, error: { kind: 'auth', message: 'The API key was rejected. Check it and try again.' } })
     await mount()
@@ -315,5 +357,162 @@ describe('ChatTab', () => {
     await waitFor(() => expect(screen.getByText(/API key was rejected/)).toBeTruthy())
     // Setup reopens so the user can fix the key.
     expect(screen.getByText('Model & keys')).toBeTruthy()
+  })
+
+  it('persists every event of a multi-event star confirm in a single stars:set call', async () => {
+    chat.mockResolvedValue({
+      ok: true,
+      turn: {
+        message: { role: 'assistant', content: 'Star these?' },
+        eventUids: [],
+        proposedAction: {
+          kind: 'star',
+          events: [
+            { uid: 'horror-sat', title: 'Drawing Monsters for a Living', start: `${SAT}T10:00:00-07:00`, room: 'Room 5AB', track: '1: PROGRAMS' },
+            { uid: 'comics-sat', title: 'Inking Techniques Workshop', start: `${SAT}T10:00:00-07:00`, room: 'Room 5AB', track: '1: PROGRAMS' },
+          ],
+        },
+        toolTrace: ['propose_action'],
+      },
+    })
+    await mount()
+    await sendMessage('star both')
+
+    const confirm = await screen.findByRole('button', { name: /Star 2/ })
+    const setSpy = (window as unknown as { api: { stars: { set: ReturnType<typeof vi.fn> } } }).api.stars.set
+    setSpy.mockClear()
+    fireEvent.click(confirm)
+
+    // Both survive — the old per-event toggle folded each into a stale list and
+    // stars:set replaces, so only the last would have persisted.
+    await waitFor(() => expect(persisted.map((s) => s.uid).sort()).toEqual(['comics-sat', 'horror-sat']))
+    expect(setSpy).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Starred.')).toBeTruthy()
+  })
+
+  it('keeps the streamed partial and shows the banner when a provider error ends the turn', async () => {
+    let settle: (r: import('@shared/chat').ChatResponse) => void = () => {}
+    chat.mockReturnValue(new Promise((resolve) => { settle = resolve }))
+    await mount()
+    await sendMessage('long answer')
+
+    await act(async () => deltaCb?.({ text: 'Partial answer so far' }))
+    await act(async () => {
+      settle({ ok: false, error: { kind: 'provider', message: 'The request timed out. Try again, or pick a faster model.' } })
+    })
+
+    // The partial stays on screen, with the error banner above it — not spliced.
+    expect(screen.getByText('Partial answer so far')).toBeTruthy()
+    expect(screen.getByText(/timed out/)).toBeTruthy()
+  })
+
+  it('commits a lens patch through the spine', async () => {
+    chat.mockResolvedValue({
+      ok: true,
+      turn: { message: { role: 'assistant', content: 'Rearranged by people.' }, patch: { lens: 'people' }, eventUids: [], toolTrace: ['set_view'] },
+    })
+    render(
+      <SpineProvider>
+        <ChatTab />
+        <StateProbe />
+      </SpineProvider>,
+    )
+    await waitFor(() => expect(syncDataset).toHaveBeenCalled())
+    await sendMessage('rearrange by people')
+    await waitFor(() => expect(screen.getByTestId('lens').textContent).toBe('people'))
+  })
+
+  it('commits a view patch through the spine', async () => {
+    chat.mockResolvedValue({
+      ok: true,
+      turn: { message: { role: 'assistant', content: 'Switched to the graph.' }, patch: { view: 'graph' }, eventUids: [], toolTrace: ['set_view'] },
+    })
+    render(
+      <SpineProvider>
+        <ChatTab />
+        <StateProbe />
+      </SpineProvider>,
+    )
+    await waitFor(() => expect(syncDataset).toHaveBeenCalled())
+    await sendMessage('show the graph')
+    await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('graph'))
+  })
+
+  it('does not linkify a bold title two events share, but does when it is unique', async () => {
+    const DUP1 = event('dup-1', { title: 'Spotlight Panel' })
+    const DUP2 = event('dup-2', { title: 'Spotlight Panel' })
+    const UNIQUE = event('unique-1', { title: 'Q&A: Where Do We Go? (Part 1)' })
+    ;(window as unknown as { api: { schedule: { refresh: unknown } } }).api.schedule.refresh = vi
+      .fn()
+      .mockResolvedValue({ events: [DUP1, DUP2, UNIQUE], changes: {}, fetchedAt: '2026-07-20T18:00:00.000Z', stale: false })
+    chat.mockResolvedValue({
+      ok: true,
+      turn: {
+        message: { role: 'assistant', content: 'See **Spotlight Panel** and **Q&A: Where Do We Go? (Part 1)**.' },
+        eventUids: ['dup-1', 'dup-2', 'unique-1'],
+        toolTrace: ['search_events'],
+      },
+    })
+    render(
+      <SpineProvider>
+        <ChatTab />
+        <SelectionProbe />
+      </SpineProvider>,
+    )
+    await waitFor(() => expect(syncDataset).toHaveBeenCalled())
+    await sendMessage('spotlight')
+
+    // The unique title resolves to a clickable link — markdown-special characters
+    // (?, parens) and all — and clicking it selects the event.
+    const unique = await screen.findByRole('button', { name: 'Q&A: Where Do We Go? (Part 1)' })
+    fireEvent.click(unique)
+    expect(screen.getByTestId('sel').textContent).toBe('unique-1')
+    // The duplicated title stays bold text, never a button.
+    expect(screen.queryByRole('button', { name: 'Spotlight Panel' })).toBeNull()
+    expect(screen.getByText('Spotlight Panel')).toBeTruthy()
+  })
+
+  it('keeps an export card actionable when the save dialog is cancelled', async () => {
+    ;(window as unknown as { api: { export: { ics: unknown } } }).api.export.ics = vi
+      .fn()
+      .mockResolvedValue({ status: 'cancelled', path: null, exported: 0, excluded: [] })
+    chat.mockResolvedValue({
+      ok: true,
+      turn: {
+        message: { role: 'assistant', content: 'Export?' },
+        eventUids: [],
+        proposedAction: { kind: 'export', events: [{ uid: 'horror-sat', title: 'Drawing Monsters for a Living', start: `${SAT}T10:00:00-07:00`, room: 'Room 5AB', track: '1: PROGRAMS' }] },
+        toolTrace: ['propose_action'],
+      },
+    })
+    await mount()
+    await sendMessage('export it')
+
+    const confirm = await screen.findByRole('button', { name: /Export 1/ })
+    fireEvent.click(confirm)
+    // A dismissed dialog wrote nothing — the card must not claim it exported.
+    await waitFor(() => expect(screen.queryByText('Exported.')).toBeNull())
+    expect(screen.getByRole('button', { name: /Export 1/ })).toBeTruthy()
+  })
+
+  it('marks an empty export done with a distinct note', async () => {
+    ;(window as unknown as { api: { export: { ics: unknown } } }).api.export.ics = vi
+      .fn()
+      .mockResolvedValue({ status: 'empty', path: null, exported: 0, excluded: [] })
+    chat.mockResolvedValue({
+      ok: true,
+      turn: {
+        message: { role: 'assistant', content: 'Export?' },
+        eventUids: [],
+        proposedAction: { kind: 'export', events: [{ uid: 'horror-sat', title: 'Drawing Monsters for a Living', start: `${SAT}T10:00:00-07:00`, room: 'Room 5AB', track: '1: PROGRAMS' }] },
+        toolTrace: ['propose_action'],
+      },
+    })
+    await mount()
+    await sendMessage('export it')
+
+    const confirm = await screen.findByRole('button', { name: /Export 1/ })
+    fireEvent.click(confirm)
+    await waitFor(() => expect(screen.getByText('Nothing to export.')).toBeTruthy())
   })
 })

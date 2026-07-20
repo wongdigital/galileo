@@ -5,4 +5,5 @@
  */
 
 export * from './types'
+export { DEFAULT_MODEL, MODELS } from './models'
 export { applyFilterIntent, resolveFacetValue } from './intent'

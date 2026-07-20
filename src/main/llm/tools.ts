@@ -108,6 +108,15 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
     return [...set]
   }
 
+  // Mark uids linkable — deduped, capped — so the model's bolded names resolve
+  // to cards without a broad search flooding the transcript.
+  const markLinkable = (uids: readonly string[]): void => {
+    for (const uid of uids) {
+      if (capture.eventUids.length >= LINKABLE_CAP) break
+      if (!capture.eventUids.includes(uid)) capture.eventUids.push(uid)
+    }
+  }
+
   const resolveChips = (chips: readonly z.infer<typeof chipSchema>[]): {
     resolved: FilterChip[]
     unresolved: string[]
@@ -137,7 +146,10 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
       execute: async (intent) => {
         capture.toolTrace.push('apply_filters')
         const { resolved, unresolved } = resolveChips(intent.add ?? [])
-        const nextFilter = applyFilterIntent(ctx.filter, { ...intent, add: resolved })
+        // Build on any filter an earlier apply_filters set this turn, not the
+        // turn-start snapshot — two calls in one turn must compound.
+        const base = capture.patch?.filter ?? ctx.filter
+        const nextFilter = applyFilterIntent(base, { ...intent, add: resolved })
         const matched = applyFilter(ctx.candidates, nextFilter, ctx.matchContext)
         // Merge into the patch — a turn may also set the view via set_view.
         capture.patch = { ...capture.patch, filter: nextFilter }
@@ -150,11 +162,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
             : []
         })
         // The events the model will name in its reply — make them linkable.
-        for (const s of sample) {
-          if (capture.eventUids.length < LINKABLE_CAP && !capture.eventUids.includes(s.uid)) {
-            capture.eventUids.push(s.uid)
-          }
-        }
+        markLinkable(sample.map((s) => s.uid))
         return {
           count: matched.length,
           applied: describeFilter(nextFilter).map((part) => part.label),
@@ -174,7 +182,13 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
       }),
       execute: async ({ view, lens }) => {
         capture.toolTrace.push('set_view')
-        capture.patch = { ...capture.patch, view, lens }
+        // Merge only the fields this call provided — a second set_view that names
+        // just the lens must not blank out a view an earlier call set.
+        capture.patch = {
+          ...capture.patch,
+          ...(view !== undefined ? { view } : {}),
+          ...(lens !== undefined ? { lens } : {}),
+        }
         return { view: view ?? null, lens: lens ?? null }
       },
     }),
@@ -188,7 +202,9 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
       }),
       execute: async ({ dimension, limit }) => {
         capture.toolTrace.push('list_facet_values')
-        const options = facetOptions(ctx.candidates, ctx.filter, ctx.matchContext, dimension).slice(
+        // Reflect any filter applied earlier this turn, not just the snapshot.
+        const base = capture.patch?.filter ?? ctx.filter
+        const options = facetOptions(ctx.candidates, base, ctx.matchContext, dimension).slice(
           0,
           limit ?? 25,
         )
@@ -212,11 +228,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
         const shown = toolRows(hits.slice(0, limit ?? 10).map((c) => c.uid))
         // Surface the found events as linked cards in the chat (capped so a broad
         // search doesn't flood the transcript), deduped against get_event's.
-        for (const row of shown) {
-          if (capture.eventUids.length < LINKABLE_CAP && !capture.eventUids.includes(row.uid)) {
-            capture.eventUids.push(row.uid)
-          }
-        }
+        markLinkable(shown.map((row) => row.uid))
         return { count: hits.length, shown: shown.length, events: shown, unresolved }
       },
     }),
@@ -255,6 +267,8 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
         const events = toolRows(
           ctx.candidates.filter((c) => ctx.matchContext.isStarred(c.uid)).map((c) => c.uid),
         )
+        // Starred titles get named in the reply too — make them linkable.
+        markLinkable(events.map((e) => e.uid))
         return { count: events.length, events }
       },
     }),
@@ -269,7 +283,9 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
       }),
       execute: async ({ kind, uids, note }) => {
         capture.toolTrace.push('propose_action')
-        const events = summaries(uids)
+        // Dedupe first: a repeated uid would double-toggle a star on confirm and
+        // collide as a React key in the confirm card.
+        const events = summaries([...new Set(uids)])
         capture.proposedAction = { kind, events, note }
         return { proposed: kind, count: events.length, note: note ?? null, awaitingConfirmation: true }
       },

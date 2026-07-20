@@ -89,6 +89,18 @@ describe('apply_filters', () => {
     expect(capture.patch?.view).toBeUndefined()
     expect(capture.patch?.lens).toBeUndefined()
   })
+
+  it('compounds a second apply_filters onto the first within the same turn', async () => {
+    const { tools, capture } = setup()
+    await run(tools.apply_filters, { add: [{ dimension: 'genre', value: 'horror' }] })
+    // The second call builds on the chips the first added, not the turn-start
+    // snapshot — otherwise last-wins would drop the horror chip.
+    await run(tools.apply_filters, { add: [{ dimension: 'ip', value: 'star wars' }] })
+    expect(capture.patch?.filter?.chips).toEqual([
+      { dimension: 'genre', value: 'Horror' },
+      { dimension: 'ip', value: 'Star Wars' },
+    ])
+  })
 })
 
 describe('set_view', () => {
@@ -103,6 +115,15 @@ describe('set_view', () => {
     // The earlier filter survives the merge.
     expect(capture.patch?.filter?.chips).toEqual([{ dimension: 'genre', value: 'Horror' }])
     expect(capture.toolTrace).toEqual(['apply_filters', 'set_view'])
+  })
+
+  it('keeps a field an earlier call set when a later call omits it', async () => {
+    const { tools, capture } = setup()
+    await run(tools.set_view, { view: 'graph' })
+    await run(tools.set_view, { lens: 'people' })
+    // The second call named only the lens; the view from the first must survive.
+    expect(capture.patch?.view).toBe('graph')
+    expect(capture.patch?.lens).toBe('people')
   })
 })
 
@@ -165,6 +186,12 @@ describe('get_starred', () => {
     expect(result.count).toBe(1)
     expect(result.events[0].uid).toBe('a')
   })
+
+  it('captures the starred uids so their titles are linkable in the reply', async () => {
+    const { tools, capture } = setup()
+    await run(tools.get_starred, {})
+    expect(capture.eventUids).toEqual(['a'])
+  })
 })
 
 describe('propose_action', () => {
@@ -181,5 +208,12 @@ describe('propose_action', () => {
         { uid: 'b', title: 'Panel B', start: '2026-07-24T10:00:00-07:00', room: 'Room 1', track: '1: Programs' },
       ],
     })
+  })
+
+  it('dedupes a repeated uid to one summary per event', async () => {
+    const { tools, capture } = setup()
+    const result = await run(tools.propose_action, { kind: 'star', uids: ['a', 'a', 'b'] })
+    expect(result.count).toBe(2)
+    expect(capture.proposedAction?.events.map((e) => e.uid)).toEqual(['a', 'b'])
   })
 })

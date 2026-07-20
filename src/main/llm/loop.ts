@@ -54,27 +54,53 @@ const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, sig
     stopWhen: stepCountIs(MAX_STEPS),
     abortSignal: signal,
   })
+  // Accumulate what actually streamed. `first.text` is only the FINAL step's
+  // text; fullStream deltas span every step, so the accumulation is what the
+  // user watched — returning it means finalize never rewrites the screen.
+  let streamed = ''
   for await (const part of first.fullStream) {
-    if (part.type === 'text-delta') onDelta?.({ text: part.text })
-    else if (part.type === 'tool-call') onDelta?.({ status: TOOL_STATUS[part.toolName] ?? 'Working…' })
+    if (part.type === 'text-delta') {
+      streamed += part.text
+      onDelta?.({ text: part.text })
+    } else if (part.type === 'tool-call') {
+      onDelta?.({ status: TOOL_STATUS[part.toolName] ?? 'Working…' })
+    }
   }
-  const text = await first.text
-  if (text.trim()) return { text }
 
-  // The model stopped on a tool call without a written reply (step cap, or it
-  // just declined to summarize). Force one final answer from everything it
-  // gathered, tools withheld, streamed too, so the user never gets silence.
+  // A written reply in the final step means the turn is complete; return the
+  // accumulation (a superset of that text when earlier steps also wrote prose).
+  const finalText = await first.text
+  if (finalText.trim()) return { text: streamed.trim() ? streamed : finalText }
+
+  // The model stopped on a tool call without a final written reply (step cap,
+  // or it just declined to summarize). Don't burn a fallback call if the turn
+  // is already being aborted — runChatTurn will surface the stop/timeout.
+  if (signal?.aborted) return { text: streamed }
+
+  // Force one final answer from everything it gathered. The history replays
+  // tool_use/tool_result parts, so tools MUST be passed (with toolChoice 'none')
+  // or the provider rejects the request. Streamed too, so silence never lands.
   const gathered = await first.response
+  if (streamed) {
+    // Intermediate prose already streamed; separate it from the summary.
+    streamed += '\n\n'
+    onDelta?.({ text: '\n\n' })
+  }
   const summary = streamText({
     model,
     system,
     messages: [...messages, ...gathered.messages],
+    tools,
+    toolChoice: 'none',
     abortSignal: signal,
   })
   for await (const part of summary.fullStream) {
-    if (part.type === 'text-delta') onDelta?.({ text: part.text })
+    if (part.type === 'text-delta') {
+      streamed += part.text
+      onDelta?.({ text: part.text })
+    }
   }
-  return { text: await summary.text }
+  return { text: streamed }
 }
 
 export interface ChatDeps {
@@ -110,6 +136,16 @@ function classifyError(error: unknown): ChatError {
   return { kind: 'provider', message }
 }
 
+/** An aborted signal is either the user's Stop or the timeout; the reason tells
+ *  them apart. A stop is not an error to shout about; a timeout is. */
+function abortResponse(signal: AbortSignal): ChatResponse {
+  const reason = signal.reason
+  const timedOut = reason instanceof Error && reason.message === 'timeout'
+  return timedOut
+    ? { ok: false, error: { kind: 'provider', message: 'The request timed out. Try again, or pick a faster model.' } }
+    : { ok: false, error: { kind: 'aborted', message: 'Stopped.' } }
+}
+
 export async function runChatTurn(deps: ChatDeps, request: ChatRequest): Promise<ChatResponse> {
   const key = deps.keyStore.get(request.provider)
   if (!key) {
@@ -138,6 +174,10 @@ export async function runChatTurn(deps: ChatDeps, request: ChatRequest): Promise
   const generate = deps.generate ?? defaultGenerate
   try {
     const { text } = await generate({ model, system: SYSTEM_PROMPT, messages, tools, signal: deps.signal, onDelta: deps.onDelta })
+    // An abort after ≥1 completed step RESOLVES the stream rather than rejecting
+    // (AI SDK v7), so a Stop or timeout can land here with a half-answer. Treat
+    // an aborted signal as the failure it is, never as a complete turn.
+    if (deps.signal?.aborted) return abortResponse(deps.signal)
     return {
       ok: true,
       turn: {
@@ -151,15 +191,8 @@ export async function runChatTurn(deps: ChatDeps, request: ChatRequest): Promise
       },
     }
   } catch (error) {
-    // A stop and a timeout both arrive as an abort; the abort reason tells them
-    // apart. A user stop is not an error to shout about; a timeout is.
-    if (deps.signal?.aborted) {
-      const reason = deps.signal.reason
-      const timedOut = reason instanceof Error && reason.message === 'timeout'
-      return timedOut
-        ? { ok: false, error: { kind: 'provider', message: 'The request timed out. Try again, or pick a faster model.' } }
-        : { ok: false, error: { kind: 'aborted', message: 'Stopped.' } }
-    }
+    // The abort can also reject (before any step completed); same handling.
+    if (deps.signal?.aborted) return abortResponse(deps.signal)
     return { ok: false, error: classifyError(error) }
   }
 }

@@ -12,16 +12,12 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { LanguageModel } from 'ai'
-import type { ProviderId } from '../../shared/chat'
+import { DEFAULT_MODEL, type ProviderId } from '../../shared/chat'
 
-/** Sensible, overridable defaults. Anthropic is the house provider (the
- *  enrichment pipeline already runs on it), so its default is the current
- *  fast-and-capable Claude; the others are placeholders a user replaces. */
-export const DEFAULT_MODEL: Record<ProviderId, string> = {
-  anthropic: 'claude-sonnet-5',
-  openai: 'gpt-4.1',
-  openrouter: 'anthropic/claude-sonnet-5',
-}
+// The overridable per-provider defaults live in the shared catalogue so main
+// and the tab agree on them; re-exported here for the callers that reach for
+// them through this module.
+export { DEFAULT_MODEL }
 
 export function languageModel(
   provider: ProviderId,
