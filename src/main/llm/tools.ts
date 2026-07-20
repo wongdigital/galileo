@@ -46,7 +46,7 @@ const chipShape = {
   dimension: z
     .string()
     .describe(
-      'One of: genre, ip (franchise), person, strand, community, day, track, format, venue, time, duration, audience, accessibility',
+      'One of: genre, ip (franchise), person, strand, community, day, track, format, venue (building), room (exact room, e.g. "Hall H"), time, duration, audience, accessibility',
     ),
   value: z.string().describe('The value; loose casing is fine — it is resolved to the real corpus value'),
   negated: z.boolean().optional().describe('Constraints only: exclude events with this value'),
@@ -119,7 +119,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
   return {
     apply_filters: tool({
       description:
-        'Set the filter, lens, and/or view. Returns the real matched count, the resolved filter, and a small sample of the actual matched events (with their genres and franchises). Use the count it reports, and describe only the events in the sample — do not guess the composition of the rest.',
+        'Filter the schedule (chips, text, starred/changed). Does NOT change the view or lens — those have their own tool. Returns the real matched count, the resolved filter, and a small sample of the actual matched events (with genres and franchises). Use the count it reports, and describe only the events in the sample — do not guess the composition of the rest.',
       inputSchema: z.object({
         clear: z.boolean().optional().describe('Reset to an empty filter before applying the rest'),
         add: z.array(chipSchema).optional(),
@@ -127,15 +127,14 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
         text: z.string().nullable().optional().describe('Free-text search; null or "" clears it'),
         starredOnly: z.boolean().optional(),
         changedOnly: z.boolean().optional(),
-        lens: z.enum(['ip', 'people', 'facets']).optional(),
-        view: z.enum(['graph', 'schedule']).optional(),
       }),
       execute: async (intent) => {
         capture.toolTrace.push('apply_filters')
         const { resolved, unresolved } = resolveChips(intent.add ?? [])
         const nextFilter = applyFilterIntent(ctx.filter, { ...intent, add: resolved })
         const matched = applyFilter(ctx.candidates, nextFilter, ctx.matchContext)
-        capture.patch = { filter: nextFilter, lens: intent.lens, view: intent.view }
+        // Merge into the patch — a turn may also set the view via set_view.
+        capture.patch = { ...capture.patch, filter: nextFilter }
         // Return the real matched events (a sample), so the model describes what
         // actually matched instead of inventing which franchise each one carries.
         const sample = matched.slice(0, 6).flatMap((c) => {
@@ -150,9 +149,21 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
           sample,
           sampleNote: matched.length > sample.length ? `showing ${sample.length} of ${matched.length}` : 'complete',
           unresolved,
-          lens: intent.lens ?? null,
-          view: intent.view ?? null,
         }
+      },
+    }),
+
+    set_view: tool({
+      description:
+        'Switch the main view (graph or schedule/5-day list) and/or the graph lens (ip / people / facets). ONLY call this when the user explicitly asks to change the view or the lens — never as a side effect of filtering. Leaving both unset is a no-op.',
+      inputSchema: z.object({
+        view: z.enum(['graph', 'schedule']).optional(),
+        lens: z.enum(['ip', 'people', 'facets']).optional(),
+      }),
+      execute: async ({ view, lens }) => {
+        capture.toolTrace.push('set_view')
+        capture.patch = { ...capture.patch, view, lens }
+        return { view: view ?? null, lens: lens ?? null }
       },
     }),
 
@@ -187,6 +198,13 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
         const state = applyFilterIntent(EMPTY_FILTER, { text: text ?? undefined, add: resolved })
         const hits = applyFilter(ctx.candidates, state, ctx.matchContext)
         const shown = toolRows(hits.slice(0, limit ?? 10).map((c) => c.uid))
+        // Surface the found events as linked cards in the chat (capped so a broad
+        // search doesn't flood the transcript), deduped against get_event's.
+        for (const row of shown) {
+          if (capture.eventUids.length < 12 && !capture.eventUids.includes(row.uid)) {
+            capture.eventUids.push(row.uid)
+          }
+        }
         return { count: hits.length, shown: shown.length, events: shown, unresolved }
       },
     }),

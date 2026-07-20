@@ -80,26 +80,29 @@ function Sidebar() {
   const [tab, setTab] = useState<SidebarTab>('filter')
   return (
     <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-ground-950">
-      <div className="flex shrink-0 items-center gap-px border-b border-line p-2">
-        {SIDEBAR_TABS.map((t) => {
-          const active = tab === t.id
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              aria-pressed={active}
-              className={[
-                'flex-1 rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors duration-150',
-                active
-                  ? 'bg-ground-800 text-ink-bright'
-                  : 'text-ink-dim hover:text-ink',
-              ].join(' ')}
-            >
-              {t.label}
-            </button>
-          )
-        })}
+      <div className="shrink-0 border-b border-line p-2">
+        <div className="flex items-center gap-px rounded-lg border border-line bg-ground-850 p-px">
+          {SIDEBAR_TABS.map((t) => {
+            const active = tab === t.id
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                aria-pressed={active}
+                className={[
+                  'flex-1 rounded-[7px] px-3 py-1.5 text-[13px] font-medium',
+                  'transition-all duration-[--duration-toggle] ease-[--ease-instrument]',
+                  active
+                    ? 'bg-ground-700 text-ink-bright shadow-[0_0_0_1px_var(--color-line-strong),0_0_18px_-6px_var(--color-lumen)]'
+                    : 'text-ink-dim hover:text-ink',
+                ].join(' ')}
+              >
+                {t.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
       {/* Both mounted; hiding rather than unmounting keeps the chat transcript
           and the filter's expand state alive across tab switches. */}

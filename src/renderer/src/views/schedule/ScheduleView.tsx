@@ -13,6 +13,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { EventCard } from '@renderer/components/EventCard'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
+import { ALL_DAYS } from '@renderer/state/derive'
 import { EMPTY_FILTER } from '@shared/filter'
 import { AmbientShelf } from './AmbientShelf'
 import { EventRow, ROW_HEIGHT } from './EventRow'
@@ -21,34 +22,58 @@ import { StaleBanner } from './StaleBanner'
 import { ZeroResults } from './ZeroResults'
 import { useUidAnchor } from './useUidAnchor'
 
+function DayTab({
+  weekday,
+  sub,
+  active,
+  onClick,
+}: {
+  weekday: string
+  sub: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        'relative flex flex-col items-start gap-0.5 px-4 py-2.5 transition-colors duration-200',
+        active ? 'text-ink-bright' : 'text-ink-faint hover:text-ink-dim',
+      ].join(' ')}
+    >
+      <span className="text-[12.5px] font-medium">{weekday}</span>
+      <span className="font-mono text-[10.5px]">{sub}</span>
+      {active ? (
+        <span className="absolute inset-x-2 -bottom-px h-px bg-lumen shadow-[0_0_10px_1px_var(--color-lumen-dim)]" />
+      ) : null}
+    </button>
+  )
+}
+
 function DayRail() {
   const { setActiveDay } = useSpine()
-  const { days, activeDay: resolvedDay } = useSchedule()
+  const { days, activeDay: resolvedDay, filteredCount } = useSchedule()
 
   return (
     <div className="flex shrink-0 items-stretch gap-px border-b border-line px-4">
-      {days.map((bucket) => {
-        const active = bucket.day === resolvedDay
-        return (
-          <button
-            key={bucket.day}
-            type="button"
-            onClick={() => setActiveDay(bucket.day)}
-            className={[
-              'relative flex flex-col items-start gap-0.5 px-4 py-2.5 transition-colors duration-200',
-              active ? 'text-ink-bright' : 'text-ink-faint hover:text-ink-dim',
-            ].join(' ')}
-          >
-            <span className="text-[12.5px] font-medium">{bucket.weekday}</span>
-            <span className="font-mono text-[10.5px]">
-              {bucket.date} · {bucket.count}
-            </span>
-            {active ? (
-              <span className="absolute inset-x-2 -bottom-px h-px bg-lumen shadow-[0_0_10px_1px_var(--color-lumen-dim)]" />
-            ) : null}
-          </button>
-        )
-      })}
+      {/* Every filtered event across the con — pairs with the Starred toggle to
+          give "all my stars, any day". */}
+      <DayTab
+        weekday="All"
+        sub={`days · ${filteredCount}`}
+        active={resolvedDay === ALL_DAYS}
+        onClick={() => setActiveDay(ALL_DAYS)}
+      />
+      {days.map((bucket) => (
+        <DayTab
+          key={bucket.day}
+          weekday={bucket.weekday}
+          sub={`${bucket.date} · ${bucket.count}`}
+          active={bucket.day === resolvedDay}
+          onClick={() => setActiveDay(bucket.day)}
+        />
+      ))}
     </div>
   )
 }

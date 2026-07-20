@@ -46,6 +46,7 @@ export const FILTER_DIMENSIONS: readonly FilterDimension[] = [
   { id: 'track', label: 'Track', kind: 'constraint', rail: 'primary' },
   { id: 'format', label: 'Format', kind: 'constraint', rail: 'more' },
   { id: 'venue', label: 'Venue', kind: 'constraint', rail: 'more' },
+  { id: 'room', label: 'Room', kind: 'constraint', rail: 'more' },
   { id: 'time', label: 'Time', kind: 'constraint', rail: 'more' },
   { id: 'duration', label: 'Duration', kind: 'constraint', rail: 'more' },
   { id: 'audience', label: 'Audience', kind: 'constraint', rail: 'more' },

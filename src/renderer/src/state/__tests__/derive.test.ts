@@ -10,6 +10,7 @@ import {
   ghostsForDay,
   isLoud,
   resolveActiveDay,
+  ALL_DAYS,
   rowStates,
 } from '../derive'
 import type { Change, ScheduleEvent } from '@shared/schedule'
@@ -230,6 +231,12 @@ describe('resolveActiveDay', () => {
 
   it('has nothing to resolve against an empty corpus', () => {
     expect(resolveActiveDay([], 'anything')).toBeNull()
+  })
+
+  it('keeps "All" sticky regardless of the day buckets', () => {
+    expect(resolveActiveDay(buckets, ALL_DAYS)).toBe(ALL_DAYS)
+    // Even against an empty corpus — All is a valid selection, not a day.
+    expect(resolveActiveDay([], ALL_DAYS)).toBe(ALL_DAYS)
   })
 })
 

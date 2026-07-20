@@ -16,6 +16,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Markdown from 'react-markdown'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
 import { dayLabel, formatTime, localParts } from '@renderer/state/derive'
@@ -403,14 +404,33 @@ function Bubble({
   const isUser = entry.message.role === 'user'
   return (
     <div className={isUser ? 'flex justify-end' : 'flex flex-col gap-2'}>
-      <div
-        className={[
-          'max-w-[90%] whitespace-pre-wrap rounded-lg px-3 py-2 text-[12.5px] leading-relaxed',
-          isUser ? 'self-end bg-lumen/10 text-ink-bright' : 'bg-ground-850 text-ink',
-        ].join(' ')}
-      >
-        {entry.message.content}
-      </div>
+      {isUser ? (
+        <div className="max-w-[90%] self-end whitespace-pre-wrap rounded-lg bg-lumen/10 px-3 py-2 text-[12.5px] leading-relaxed text-ink-bright">
+          {entry.message.content}
+        </div>
+      ) : (
+        <div
+          className={[
+            'max-w-[90%] rounded-lg bg-ground-850 px-3 py-2 text-[12.5px] leading-relaxed text-ink',
+            // The concierge replies in Markdown; render it. Arbitrary variants
+            // rather than a typography plugin — the element set here is small.
+            '[&_p]:my-1 first:[&_p]:mt-0 last:[&_p]:mb-0',
+            '[&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_li]:my-0.5',
+            '[&_strong]:font-semibold [&_strong]:text-ink-bright [&_em]:italic',
+            '[&_a]:text-lumen [&_a]:underline [&_code]:rounded [&_code]:bg-ground-900 [&_code]:px-1 [&_code]:font-mono [&_code]:text-[11.5px]',
+            '[&_h1]:text-[13px] [&_h1]:font-semibold [&_h2]:text-[13px] [&_h2]:font-semibold [&_h3]:font-semibold',
+          ].join(' ')}
+        >
+          <Markdown
+            components={{
+              // Links open in the user's browser, never navigate the app window.
+              a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+            }}
+          >
+            {entry.message.content}
+          </Markdown>
+        </div>
+      )}
 
       {entry.eventUids && entry.eventUids.length > 0 ? (
         <div className="flex flex-col gap-1.5">

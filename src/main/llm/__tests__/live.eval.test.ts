@@ -91,10 +91,10 @@ const DESC: Record<string, string> = {
 }
 
 const CANDIDATES: FilterCandidate[] = [
-  { uid: 'e1', dimensions: { genre: ['Horror'], ip: ['Star Wars'], person: ['Ada Vance'], venue: ['Convention Center'] }, haystack: 'e1 star wars a retrospective horror ada vance thursday room 6a' },
-  { uid: 'e2', dimensions: { genre: ['Comedy'], ip: ['Star Wars'], venue: ['Marriott Marquis'] }, haystack: 'e2 comedy legends of the galaxy star wars friday marriott' },
-  { uid: 'e3', dimensions: { ip: ['Marvel'], person: ['Bo Idris'], venue: ['Convention Center'] }, haystack: 'e3 marvel studios hall h presentation saturday bo idris' },
-  { uid: 'e4', dimensions: { genre: ['Horror'], venue: ['Convention Center'] }, haystack: 'e4 night terrors after dark horror sunday' },
+  { uid: 'e1', dimensions: { genre: ['Horror'], ip: ['Star Wars'], person: ['Ada Vance'], venue: ['Convention Center'], room: [ROOM.e1!] }, haystack: 'e1 star wars a retrospective horror ada vance thursday room 6a' },
+  { uid: 'e2', dimensions: { genre: ['Comedy'], ip: ['Star Wars'], venue: ['Marriott Marquis'], room: [ROOM.e2!] }, haystack: 'e2 comedy legends of the galaxy star wars friday marriott' },
+  { uid: 'e3', dimensions: { ip: ['Marvel'], person: ['Bo Idris'], venue: ['Convention Center'], room: [ROOM.e3!] }, haystack: 'e3 marvel studios hall h presentation saturday bo idris' },
+  { uid: 'e4', dimensions: { genre: ['Horror'], venue: ['Convention Center'], room: [ROOM.e4!] }, haystack: 'e4 night terrors after dark horror sunday' },
 ]
 const EVENTS: ScheduleEvent[] = CANDIDATES.map((c) => ({
   uid: c.uid,
@@ -213,6 +213,19 @@ for (const provider of ['anthropic', 'openai', 'openrouter'] as ProviderId[]) {
       await contentCase('what franchises are in this schedule?', (trace) => {
         expect(trace.some((t) => ['list_facet_values', 'search_events', 'apply_filters'].includes(t))).toBe(true)
       })
+    }, TIMEOUT)
+
+    it('scopes to a room with a room chip and does not switch the view', async () => {
+      const res = await runChatTurn(deps, { ...request(provider, 'show me only Hall H events'), view: 'graph' })
+      expect(res.ok).toBe(true)
+      if (!res.ok) return
+      console.log(`[${provider}] room-filter → ${res.turn.toolTrace.join(', ')} · patch ${JSON.stringify(res.turn.patch)}`)
+      expect(res.turn.toolTrace).toContain('apply_filters')
+      const chips = res.turn.patch?.filter?.chips ?? []
+      // A precise room chip, not a fragile free-text match…
+      expect(chips.some((c) => c.dimension === 'room' && c.value === 'Hall H')).toBe(true)
+      // …and it leaves the user in the graph view they were in.
+      expect(res.turn.patch?.view ?? null).not.toBe('schedule')
     }, TIMEOUT)
 
     it('finds the Saturday Hall H panel regardless of the open day', async () => {

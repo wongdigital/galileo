@@ -75,13 +75,26 @@ describe('apply_filters', () => {
     expect(capture.patch?.filter?.chips).toEqual([]) // nothing added
   })
 
-  it('carries lens and view into the patch', async () => {
+  it('does not touch the view or lens — that is set_view territory', async () => {
     const { tools, capture } = setup()
-    const result = await run(tools.apply_filters, { lens: 'people', view: 'graph' })
-    expect(result.lens).toBe('people')
+    await run(tools.apply_filters, { add: [{ dimension: 'genre', value: 'horror' }] })
+    expect(capture.patch?.view).toBeUndefined()
+    expect(capture.patch?.lens).toBeUndefined()
+  })
+})
+
+describe('set_view', () => {
+  it('carries view and lens into the patch, and merges with a filter already set', async () => {
+    const { tools, capture } = setup()
+    await run(tools.apply_filters, { add: [{ dimension: 'genre', value: 'horror' }] })
+    const result = await run(tools.set_view, { view: 'graph', lens: 'people' })
     expect(result.view).toBe('graph')
-    expect(capture.patch?.lens).toBe('people')
+    expect(result.lens).toBe('people')
     expect(capture.patch?.view).toBe('graph')
+    expect(capture.patch?.lens).toBe('people')
+    // The earlier filter survives the merge.
+    expect(capture.patch?.filter?.chips).toEqual([{ dimension: 'genre', value: 'Horror' }])
+    expect(capture.toolTrace).toEqual(['apply_filters', 'set_view'])
   })
 })
 

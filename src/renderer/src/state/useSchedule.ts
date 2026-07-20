@@ -35,6 +35,7 @@ import type { ScheduleEvent } from '@shared/schedule'
 import { FACET_MAP } from './facetMap'
 import { useSpine } from './spine'
 import {
+  ALL_DAYS,
   buildDayBuckets,
   buildDayRows,
   buildGhostRows,
@@ -166,7 +167,9 @@ export function useSchedule(): ScheduleModel {
   const { rows, ambient } = useMemo(() => {
     const dayEvents: ScheduleEvent[] = []
     for (const candidate of filtered) {
-      if (base.dayByUid.get(candidate.uid) !== resolvedDay) continue
+      // "All" keeps every filtered event, any day; buildDayRows sorts them into
+      // one chronological list across the con.
+      if (resolvedDay !== ALL_DAYS && base.dayByUid.get(candidate.uid) !== resolvedDay) continue
       const event = base.byUid.get(candidate.uid)
       if (event) dayEvents.push(event)
     }
@@ -179,7 +182,10 @@ export function useSchedule(): ScheduleModel {
   }, [filtered, base, resolvedDay, changes, starredUids])
 
   const allGhosts = useMemo(() => buildGhostRows(stars, base.liveUids), [stars, base.liveUids])
-  const ghosts = useMemo(() => ghostsForDay(allGhosts, resolvedDay), [allGhosts, resolvedDay])
+  const ghosts = useMemo(
+    () => (resolvedDay === ALL_DAYS ? allGhosts : ghostsForDay(allGhosts, resolvedDay)),
+    [allGhosts, resolvedDay],
+  )
 
   // Memoized for its *identity*, not its cost. Consumers use it as a dependency,
   // and a fresh array on every render restarts anything keyed on it — which is

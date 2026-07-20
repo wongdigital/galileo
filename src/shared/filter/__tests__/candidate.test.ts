@@ -34,6 +34,12 @@ describe('buildCandidate', () => {
     expect(c.dimensions['day']).toEqual(['2026-07-24'])
   })
 
+  it('carries the exact room verbatim, so "Hall H" is a real chip', () => {
+    // Room is the precise seat, distinct from venue (the building) — the only
+    // way to scope to one room without a text match that leaks across rooms.
+    expect(build(PANEL).dimensions['room']).toEqual(['Room 5AB'])
+  })
+
   it('strips the sort prefix off the track so chips read as "GAMES"', () => {
     expect(build(GAMES_BLOCK).dimensions['track']).toEqual(['GAMES'])
   })

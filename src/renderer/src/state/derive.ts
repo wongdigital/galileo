@@ -204,11 +204,19 @@ export function buildDayBuckets(
 }
 
 /**
- * Which day to show. Keeps the current one whenever it still exists — a refresh
- * must not bounce the user back to Wednesday — and otherwise picks the first
- * day that has results under the active filter.
+ * The "All" pseudo-day: every filtered event across the con, in one
+ * chronological list. It is how starred-across-days is reachable (All + the
+ * Starred toggle) without the day rail lying about which day you are on.
+ */
+export const ALL_DAYS = 'all'
+
+/**
+ * Which day to show. "All" is sticky once chosen. Otherwise keeps the current
+ * day whenever it still exists — a refresh must not bounce the user back to
+ * Wednesday — and falls back to the first day with results under the filter.
  */
 export function resolveActiveDay(buckets: readonly DayBucket[], current: string | null): string | null {
+  if (current === ALL_DAYS) return ALL_DAYS
   if (current && buckets.some((b) => b.day === current)) return current
   return buckets.find((b) => b.count > 0)?.day ?? buckets[0]?.day ?? null
 }
