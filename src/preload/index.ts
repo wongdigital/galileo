@@ -49,6 +49,8 @@ const api = {
     syncDataset: (candidates: readonly FilterCandidate[]): Promise<{ received: number }> =>
       ipcRenderer.invoke('llm:dataset:sync', candidates),
     chat: (request: ChatRequest): Promise<ChatResponse> => ipcRenderer.invoke('llm:chat', request),
+    /** Abort the in-flight turn — the Stop button. */
+    cancelChat: (): Promise<{ cancelled: boolean }> => ipcRenderer.invoke('llm:chat:cancel'),
   },
 }
 

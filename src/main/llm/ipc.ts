@@ -28,8 +28,14 @@ export interface LlmIpcDeps {
   getEvents: () => readonly ScheduleEvent[]
 }
 
+/** A turn that reaches this without answering is stuck; abort it and surface a
+ *  clear timeout rather than a spinner that never stops. Generous, because a
+ *  multi-step tool loop on a large model legitimately takes a while. */
+const CHAT_TIMEOUT_MS = 90_000
+
 export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
   let candidates: readonly FilterCandidate[] = []
+  let inflight: AbortController | null = null
 
   ipcMain.handle('llm:key:status', () => deps.keyStore.status())
 
@@ -59,10 +65,30 @@ export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
     return { received: candidates.length }
   })
 
-  ipcMain.handle('llm:chat', (_event, ...args: unknown[]) =>
-    runChatTurn(
-      { keyStore: deps.keyStore, getEvents: deps.getEvents, getCandidates: () => candidates },
-      args[0] as ChatRequest,
-    ),
-  )
+  ipcMain.handle('llm:chat', async (_event, ...args: unknown[]) => {
+    // One turn in flight per window; a new send supersedes any prior straggler.
+    inflight?.abort(new Error('superseded'))
+    const controller = new AbortController()
+    inflight = controller
+    const timeout = setTimeout(() => controller.abort(new Error('timeout')), CHAT_TIMEOUT_MS)
+    try {
+      return await runChatTurn(
+        {
+          keyStore: deps.keyStore,
+          getEvents: deps.getEvents,
+          getCandidates: () => candidates,
+          signal: controller.signal,
+        },
+        args[0] as ChatRequest,
+      )
+    } finally {
+      clearTimeout(timeout)
+      if (inflight === controller) inflight = null
+    }
+  })
+
+  ipcMain.handle('llm:chat:cancel', () => {
+    inflight?.abort(new Error('cancelled'))
+    return { cancelled: true }
+  })
 }

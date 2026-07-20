@@ -107,4 +107,29 @@ describe('runChatTurn', () => {
       expect(res.error.message).toMatch(/socket hang up/)
     }
   })
+
+  it('reports a user Stop as aborted, not an error', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('cancelled'))
+    const generate: GenerateFn = async () => {
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' })
+    }
+    const res = await runChatTurn({ ...deps(generate), signal: controller.signal }, request)
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.error.kind).toBe('aborted')
+  })
+
+  it('reports a timeout as a provider error the user can act on', async () => {
+    const controller = new AbortController()
+    controller.abort(new Error('timeout'))
+    const generate: GenerateFn = async () => {
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' })
+    }
+    const res = await runChatTurn({ ...deps(generate), signal: controller.signal }, request)
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.error.kind).toBe('provider')
+      expect(res.error.message).toMatch(/timed out/)
+    }
+  })
 })

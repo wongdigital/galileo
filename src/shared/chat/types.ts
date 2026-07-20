@@ -141,9 +141,10 @@ export interface ChatRequest {
 export type KeyStatus = Record<ProviderId, boolean>
 
 /** A chat call can fail for reasons the tab must show in-place rather than
- *  throw: no key, a rejected key (401), or a provider/network error. */
+ *  throw: no key, a rejected key (401), a provider/network error, or a
+ *  deliberate stop (the user hit Stop — not an error to shout about). */
 export interface ChatError {
-  kind: 'no-key' | 'auth' | 'provider'
+  kind: 'no-key' | 'auth' | 'provider' | 'aborted'
   message: string
 }
 

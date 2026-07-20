@@ -6,7 +6,7 @@
  * on a tap. The real spine and filter engine run; only window.api is faked.
  */
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SpineProvider, useSpine } from '../../state/spine'
 import { ChatTab } from '../ChatTab'
@@ -82,6 +82,7 @@ beforeEach(() => {
       models: vi.fn(() => Promise.resolve([])),
       syncDataset,
       chat,
+      cancelChat: vi.fn(() => Promise.resolve({ cancelled: true })),
     },
   }
 })
@@ -220,6 +221,34 @@ describe('ChatTab', () => {
     fireEvent.click(confirm)
     await waitFor(() => expect(persisted.some((s) => s.uid === 'horror-sat')).toBe(true))
     expect(screen.getByText('Starred.')).toBeTruthy()
+  })
+
+  it('shows a Stop button while a turn is in flight and cancels it', async () => {
+    let settle: (r: import('@shared/chat').ChatResponse) => void = () => {}
+    chat.mockReturnValue(new Promise((resolve) => { settle = resolve }))
+    await mount()
+    await sendMessage('is there a marvel panel in hall H?')
+
+    const stop = await screen.findByRole('button', { name: 'Stop' })
+    fireEvent.click(stop)
+    expect((window as unknown as { api: { llm: { cancelChat: ReturnType<typeof vi.fn> } } }).api.llm.cancelChat).toHaveBeenCalled()
+
+    // Settle the pending call as aborted so nothing dangles; no error banner.
+    await act(async () => {
+      settle({ ok: false, error: { kind: 'aborted', message: 'Stopped.' } })
+    })
+    expect(screen.queryByText('Stopped.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy()
+  })
+
+  it('names an empty reply instead of rendering a blank bubble', async () => {
+    chat.mockResolvedValue({
+      ok: true,
+      turn: { message: { role: 'assistant', content: '   ' }, eventUids: [], toolTrace: ['apply_filters'] },
+    })
+    await mount()
+    await sendMessage('hi')
+    await waitFor(() => expect(screen.getByText(/finished without a reply/)).toBeTruthy())
   })
 
   it('surfaces a rejected key and opens the key panel', async () => {

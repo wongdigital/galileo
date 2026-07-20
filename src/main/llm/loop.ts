@@ -26,17 +26,19 @@ export interface GenerateArgs {
   system: string
   messages: ModelMessage[]
   tools: ChatTools
+  signal?: AbortSignal
 }
 
 export type GenerateFn = (args: GenerateArgs) => Promise<{ text: string }>
 
-const defaultGenerate: GenerateFn = async ({ model, system, messages, tools }) => {
+const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, signal }) => {
   const { text } = await generateText({
     model,
     system,
     messages,
     tools,
     stopWhen: stepCountIs(MAX_STEPS),
+    abortSignal: signal,
   })
   return { text }
 }
@@ -45,6 +47,8 @@ export interface ChatDeps {
   keyStore: { get(provider: ChatRequest['provider']): string | null }
   getEvents: () => readonly ScheduleEvent[]
   getCandidates: () => readonly FilterCandidate[]
+  /** Aborts the in-flight model call — the Stop button, and the timeout. */
+  signal?: AbortSignal
   /** Injected in tests; production uses AI SDK generateText. */
   generate?: GenerateFn
 }
@@ -97,7 +101,7 @@ export async function runChatTurn(deps: ChatDeps, request: ChatRequest): Promise
 
   const generate = deps.generate ?? defaultGenerate
   try {
-    const { text } = await generate({ model, system: SYSTEM_PROMPT, messages, tools })
+    const { text } = await generate({ model, system: SYSTEM_PROMPT, messages, tools, signal: deps.signal })
     return {
       ok: true,
       turn: {
@@ -109,6 +113,15 @@ export async function runChatTurn(deps: ChatDeps, request: ChatRequest): Promise
       },
     }
   } catch (error) {
+    // A stop and a timeout both arrive as an abort; the abort reason tells them
+    // apart. A user stop is not an error to shout about; a timeout is.
+    if (deps.signal?.aborted) {
+      const reason = deps.signal.reason
+      const timedOut = reason instanceof Error && reason.message === 'timeout'
+      return timedOut
+        ? { ok: false, error: { kind: 'provider', message: 'The request timed out. Try again, or pick a faster model.' } }
+        : { ok: false, error: { kind: 'aborted', message: 'Stopped.' } }
+    }
     return { ok: false, error: classifyError(error) }
   }
 }

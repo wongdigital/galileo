@@ -205,9 +205,12 @@ export function ChatTab() {
       })
 
       if (!response.ok) {
-        setError(response.error.message)
-        // A missing or rejected key sends the user straight to setup.
-        if (response.error.kind === 'no-key' || response.error.kind === 'auth') setSetupOpen(true)
+        // A user Stop is expected, not an error to shout about.
+        if (response.error.kind !== 'aborted') {
+          setError(response.error.message)
+          // A missing or rejected key sends the user straight to setup.
+          if (response.error.kind === 'no-key' || response.error.kind === 'auth') setSetupOpen(true)
+        }
         return
       }
 
@@ -220,7 +223,12 @@ export function ChatTab() {
       setEntries((prev) => [
         ...prev,
         {
-          message: turn.message,
+          // A model that stopped on a tool call leaves empty text; a blank
+          // bubble reads as a bug, so name what happened instead.
+          message: {
+            role: 'assistant',
+            content: turn.message.content.trim() || 'I finished without a reply — try rephrasing.',
+          },
           eventUids: turn.eventUids.length > 0 ? turn.eventUids : undefined,
           proposedAction: turn.proposedAction,
           actionState: turn.proposedAction ? 'pending' : undefined,
@@ -253,6 +261,10 @@ export function ChatTab() {
 
   const dismissAction = useCallback((index: number) => {
     setEntries((prev) => prev.map((entry, i) => (i === index ? { ...entry, actionState: 'cancelled' } : entry)))
+  }, [])
+
+  const stop = useCallback(() => {
+    void bridge()?.cancelChat()
   }, [])
 
   return (
@@ -337,14 +349,24 @@ export function ChatTab() {
           >
             <span aria-hidden="true">⚙</span>
           </button>
-          <button
-            type="button"
-            onClick={() => void send()}
-            disabled={!hasAnyKey || sending || input.trim().length === 0}
-            className="rounded-md border border-lumen-dim bg-lumen/10 px-3 py-1.5 text-[12px] text-ink-bright transition-colors duration-150 hover:bg-lumen/20 disabled:opacity-40"
-          >
-            Send
-          </button>
+          {sending ? (
+            <button
+              type="button"
+              onClick={stop}
+              className="rounded-md border border-line px-3 py-1.5 text-[12px] text-ink-dim transition-colors duration-150 hover:border-cancelled/60 hover:text-cancelled"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void send()}
+              disabled={!hasAnyKey || input.trim().length === 0}
+              className="rounded-md border border-lumen-dim bg-lumen/10 px-3 py-1.5 text-[12px] text-ink-bright transition-colors duration-150 hover:bg-lumen/20 disabled:opacity-40"
+            >
+              Send
+            </button>
+          )}
         </div>
       </div>
     </div>
