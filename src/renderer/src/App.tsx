@@ -4,6 +4,8 @@ import { useSchedule } from './state/useSchedule'
 import { isEmptyFilter } from '@shared/filter'
 import { FiltersTab } from './sidebar/FiltersTab'
 import { ChatTab } from './sidebar/ChatTab'
+import { SegmentedThumb } from './components/SegmentedThumb'
+import { useSlidingIndicator } from './components/useSlidingIndicator'
 import { ScheduleView } from './views/schedule/ScheduleView'
 import { GraphView } from './views/graph/GraphView'
 
@@ -23,19 +25,21 @@ const VIEWS: { id: ViewMode; label: string }[] = [
 
 function ViewToggle() {
   const { view, setView } = useSpine()
+  const { itemRef, box } = useSlidingIndicator(view)
   return (
-    <div className="titlebar-no-drag flex items-center gap-px rounded-lg border border-line bg-ground-850 p-px">
+    <div className="titlebar-no-drag relative flex items-center gap-px rounded-lg border border-line bg-ground-850 p-px">
+      <SegmentedThumb box={box} />
       {VIEWS.map((v) => {
         const active = view === v.id
         return (
           <button
             key={v.id}
+            ref={itemRef(v.id)}
             onClick={() => setView(v.id)}
             className={[
-              'rounded-[7px] px-3.5 py-1.5 text-[13px] font-medium transition-all duration-200',
-              active
-                ? 'bg-ground-700 text-ink-bright shadow-[0_0_0_1px_var(--color-line-strong),0_0_18px_-6px_var(--color-lumen)]'
-                : 'text-ink-dim hover:text-ink',
+              'relative rounded-[7px] px-3.5 py-1.5 text-[13px] font-medium',
+              'transition-colors duration-(--duration-toggle) ease-(--ease-instrument)',
+              active ? 'text-ink-bright' : 'text-ink-dim hover:text-ink',
             ].join(' ')}
           >
             {v.label}
@@ -81,25 +85,28 @@ function Sidebar() {
   const [tab, setTab] = useState<SidebarTab>('filter')
   const { filter } = useSpine()
   const filterActive = !isEmptyFilter(filter)
+  const { itemRef, box } = useSlidingIndicator(tab)
 
   return (
     <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-ground-950">
-      <div className="shrink-0 border-b border-line p-2">
-        <div className="flex items-center gap-px rounded-lg border border-line bg-ground-850 p-px">
+      {/* h-rail: this row, the day rail, and the graph toolbar share the
+          titlebar's 52px beat so their dividers align across the seam. */}
+      <div className="flex h-rail shrink-0 items-center border-b border-line px-2">
+        <div className="relative flex flex-1 items-center gap-px rounded-lg border border-line bg-ground-850 p-px">
+          <SegmentedThumb box={box} />
           {SIDEBAR_TABS.map((t) => {
             const active = tab === t.id
             return (
               <button
                 key={t.id}
                 type="button"
+                ref={itemRef(t.id)}
                 onClick={() => setTab(t.id)}
                 aria-pressed={active}
                 className={[
                   'relative flex-1 rounded-[7px] px-3 py-1.5 text-[13px] font-medium',
-                  'transition-all duration-[--duration-toggle] ease-[--ease-instrument]',
-                  active
-                    ? 'bg-ground-700 text-ink-bright shadow-[0_0_0_1px_var(--color-line-strong),0_0_18px_-6px_var(--color-lumen)]'
-                    : 'text-ink-dim hover:text-ink',
+                  'transition-colors duration-(--duration-toggle) ease-(--ease-instrument)',
+                  active ? 'text-ink-bright' : 'text-ink-dim hover:text-ink',
                 ].join(' ')}
               >
                 {t.label}

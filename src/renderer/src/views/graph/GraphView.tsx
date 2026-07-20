@@ -46,6 +46,7 @@ import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d'
 import { forceCollide, forceRadial, forceX, forceY } from 'd3-force'
 import { useSpine } from '@renderer/state/spine'
 import { useEntityMap } from '@renderer/state/useEntityMap'
+import { CardPresence } from '@renderer/components/CardPresence'
 import { EventCard } from '@renderer/components/EventCard'
 import { EntityCard } from '@renderer/components/EntityCard'
 import { valueLabel } from '@renderer/sidebar/labels'
@@ -427,7 +428,7 @@ export function GraphView() {
   const nodeTooltip = useCallback((node: GraphNodeObject) => {
     const model = node.model
     return model.kind === 'entity'
-      ? `${entityLabel(model.entity)} · ${model.degree} events`
+      ? `${entityLabel(model.entity)} · ${model.degree.toLocaleString()} events`
       : `${model.time} · ${model.title}`
   }, [])
 
@@ -580,16 +581,21 @@ export function GraphView() {
           <MiniMap nodes={nodes} engine={engine} viewWidth={size.width} viewHeight={size.height} />
         ) : null}
 
-        {pinnedHub ? (
-          <EntityCard
-            label={entityLabel(pinnedHub.entity)}
-            memberUids={memberUids}
-            onSelectEvent={pinEvent}
-            onDismiss={dismiss}
-          />
-        ) : selectedUid ? (
-          <EventCard uid={selectedUid} onDismiss={dismiss} />
-        ) : null}
+        {/* One presence slot for both card kinds: swapping hub card for event
+            card is a content change, not a close — only a real dismissal (or
+            opening from nothing) plays the wipe. */}
+        <CardPresence>
+          {pinnedHub ? (
+            <EntityCard
+              label={entityLabel(pinnedHub.entity)}
+              memberUids={memberUids}
+              onSelectEvent={pinEvent}
+              onDismiss={dismiss}
+            />
+          ) : selectedUid ? (
+            <EventCard uid={selectedUid} onDismiss={dismiss} />
+          ) : null}
+        </CardPresence>
 
         {!map.indexReady ? (
           <span className="absolute top-3 left-4 font-mono text-[10px] text-ink-fringe">
@@ -621,7 +627,9 @@ function Toolbar({
   right: React.ReactNode
 }) {
   return (
-    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2.5">
+    // h-rail: the graph's chrome row sits on the same 52px beat as the
+    // sidebar tab row and the schedule's day rail.
+    <div className="flex h-rail shrink-0 items-center justify-between gap-3 border-b border-line px-4">
       <LensSelector lenses={LENSES} active={lens} onSelect={setLens} />
       {right}
     </div>

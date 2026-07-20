@@ -57,6 +57,14 @@
   --ease-instrument: cubic-bezier(0.22, 0.61, 0.36, 1);
   --duration-lens: 620ms;
   --duration-toggle: 220ms;
+  --duration-card: 260ms;
+  --duration-card-out: 200ms; /* closes read faster than opens — the eye has seen the card already */
+
+  /* Spatial rhythm — the titlebar sets a 52px beat. Chrome rows directly
+     below it (sidebar tab row, day rail, graph toolbar) share the height,
+     so their bottom hairlines draw one continuous line across the
+     sidebar/main seam instead of three near-misses (U9). */
+  --spacing-rail: 52px;
 }
 
 @layer base {
@@ -111,5 +119,36 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--color-line-strong);
+  }
+}
+
+/* Card motion (U9) — the docked cards open with a middle-out wipe: a slit at
+   the vertical center that parts to reveal the card, and closes back to the
+   slit on dismiss. `both` holds the clipped state at the edges so a closing
+   card never flashes fully open on its last frame. CardPresence keeps the
+   card mounted until the conceal finishes. */
+@keyframes card-wipe {
+  from {
+    clip-path: inset(50% 0 50% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.card-reveal {
+  animation: card-wipe var(--duration-card) var(--ease-instrument) both;
+}
+.card-conceal {
+  animation: card-wipe var(--duration-card-out) var(--ease-instrument) reverse both;
+}
+
+/* Reduced motion: cards appear and disappear instantly. CardPresence checks
+   the same query and skips the exit phase, so nothing waits on an animation
+   that will never fire. */
+@media (prefers-reduced-motion: reduce) {
+  .card-reveal,
+  .card-conceal {
+    animation: none;
   }
 }

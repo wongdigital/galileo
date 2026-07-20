@@ -10,7 +10,9 @@
 
 import { useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { CardPresence } from '@renderer/components/CardPresence'
 import { EventCard } from '@renderer/components/EventCard'
+import { useSlidingIndicator } from '@renderer/components/useSlidingIndicator'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
 import { ALL_DAYS } from '@renderer/state/derive'
@@ -27,26 +29,26 @@ function DayTab({
   sub,
   active,
   onClick,
+  buttonRef,
 }: {
   weekday: string
   sub: string
   active: boolean
   onClick: () => void
+  buttonRef: (el: HTMLElement | null) => void
 }) {
   return (
     <button
       type="button"
+      ref={buttonRef}
       onClick={onClick}
       className={[
-        'relative flex flex-col items-start gap-0.5 px-4 py-2.5 transition-colors duration-200',
+        'relative flex flex-col items-start justify-center gap-0.5 px-4 transition-colors duration-200',
         active ? 'text-ink-bright' : 'text-ink-faint hover:text-ink-dim',
       ].join(' ')}
     >
       <span className="text-[12.5px] font-medium">{weekday}</span>
       <span className="font-mono text-[10.5px]">{sub}</span>
-      {active ? (
-        <span className="absolute inset-x-2 -bottom-px h-px bg-lumen shadow-[0_0_10px_1px_var(--color-lumen-dim)]" />
-      ) : null}
     </button>
   )
 }
@@ -54,26 +56,40 @@ function DayTab({
 function DayRail() {
   const { setActiveDay } = useSpine()
   const { days, activeDay: resolvedDay, filteredCount } = useSchedule()
+  const { itemRef, box } = useSlidingIndicator(resolvedDay)
 
   return (
-    <div className="flex shrink-0 items-stretch gap-px border-b border-line px-4">
+    // h-rail: shares the titlebar's 52px beat with the sidebar tab row, so
+    // the two bottom hairlines meet as one line across the seam.
+    <div className="relative flex h-rail shrink-0 items-stretch gap-px border-b border-line px-4">
       {/* Every filtered event across the con — pairs with the Starred toggle to
           give "all my stars, any day". */}
       <DayTab
         weekday="All"
-        sub={`days · ${filteredCount}`}
+        sub={`days · ${filteredCount.toLocaleString()}`}
         active={resolvedDay === ALL_DAYS}
         onClick={() => setActiveDay(ALL_DAYS)}
+        buttonRef={itemRef(ALL_DAYS)}
       />
       {days.map((bucket) => (
         <DayTab
           key={bucket.day}
           weekday={bucket.weekday}
-          sub={`${bucket.date} · ${bucket.count}`}
+          sub={`${bucket.date} · ${bucket.count.toLocaleString()}`}
           active={bucket.day === resolvedDay}
           onClick={() => setActiveDay(bucket.day)}
+          buttonRef={itemRef(bucket.day)}
         />
       ))}
+      {/* One underline that travels to the active tab (U9). Inset 8px per
+          side, mirroring the old per-tab `inset-x-2`. */}
+      {box && box.width > 16 ? (
+        <span
+          aria-hidden="true"
+          className="absolute -bottom-px h-px bg-lumen shadow-[0_0_10px_1px_var(--color-lumen-dim)] transition-[left,width] duration-(--duration-toggle) ease-(--ease-instrument) motion-reduce:transition-none"
+          style={{ left: box.left + 8, width: box.width - 16 }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -172,9 +188,11 @@ export function ScheduleView() {
                 toggles is what the map pins, so a uid chosen in either view
                 opens the same card in the other. Dismissal clears the
                 selection, which is also what clicking the row again does. */}
-            {spine.selectedUid ? (
-              <EventCard uid={spine.selectedUid} onDismiss={() => spine.setSelectedUid(null)} />
-            ) : null}
+            <CardPresence>
+              {spine.selectedUid ? (
+                <EventCard uid={spine.selectedUid} onDismiss={() => spine.setSelectedUid(null)} />
+              ) : null}
+            </CardPresence>
           </div>
         </>
       )}

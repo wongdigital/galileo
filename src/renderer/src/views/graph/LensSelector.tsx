@@ -9,6 +9,8 @@
  */
 
 import type { LensId } from '@shared/graph'
+import { SegmentedThumb } from '@renderer/components/SegmentedThumb'
+import { useSlidingIndicator } from '@renderer/components/useSlidingIndicator'
 
 const LABELS: Record<LensId, { label: string; hint: string }> = {
   ip: { label: 'IP', hint: 'shares a franchise' },
@@ -30,9 +32,11 @@ interface LensSelectorProps {
 export function LensSelector({ lenses, active, onSelect, degrees = [] }: LensSelectorProps) {
   const degreeFor = (lens: LensId): number | null =>
     degrees.find((d) => d.lens === lens)?.degree ?? null
+  const { itemRef, box } = useSlidingIndicator(active)
 
   return (
-    <div className="flex items-center gap-px rounded-lg border border-line bg-ground-850 p-px">
+    <div className="relative flex items-center gap-px rounded-lg border border-line bg-ground-850 p-px">
+      <SegmentedThumb box={box} />
       {lenses.map((lens) => {
         const isActive = lens === active
         const degree = degreeFor(lens)
@@ -40,15 +44,14 @@ export function LensSelector({ lenses, active, onSelect, degrees = [] }: LensSel
           <button
             key={lens}
             type="button"
+            ref={itemRef(lens)}
             onClick={() => onSelect(lens)}
             title={LABELS[lens].hint}
             aria-pressed={isActive}
             className={[
-              'flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-[12px] font-medium',
-              'transition-all duration-[--duration-toggle] ease-[--ease-instrument]',
-              isActive
-                ? 'bg-ground-700 text-ink-bright shadow-[0_0_0_1px_var(--color-line-strong),0_0_18px_-6px_var(--color-lumen)]'
-                : 'text-ink-dim hover:text-ink',
+              'relative flex items-center gap-1.5 rounded-[7px] px-3 py-1.5 text-[12px] font-medium',
+              'transition-colors duration-(--duration-toggle) ease-(--ease-instrument)',
+              isActive ? 'text-ink-bright' : 'text-ink-dim hover:text-ink',
             ].join(' ')}
           >
             {LABELS[lens].label}
@@ -58,7 +61,7 @@ export function LensSelector({ lenses, active, onSelect, degrees = [] }: LensSel
                   degree === 0 ? 'text-ink-fringe' : isActive ? 'text-lumen' : 'text-ink-faint'
                 }`}
               >
-                {degree}
+                {degree.toLocaleString()}
               </span>
             ) : null}
           </button>

@@ -26,12 +26,16 @@ export function AmbientShelf({ rows, onSelect, onToggleStar, selectedUid }: Ambi
   const starred = rows.filter((r) => r.starred).length
 
   return (
-    <div className="border-b border-line-soft bg-ground-950/60">
+    <div className="bg-ground-950/60">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors duration-150 hover:bg-ground-850"
+        // h-rail: second-beat chrome — level with the sidebar's count row so
+        // the hairline under each meets as one line at the seam. The border
+        // lives on the button (inside the border-box 52px, matching the
+        // sidebar rows) — on the wrapper it would add a 53rd pixel.
+        className="flex h-rail w-full items-center gap-2.5 border-b border-line px-4 text-left transition-colors duration-150 hover:bg-ground-850"
       >
         <span
           className={`text-ink-fringe transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
@@ -42,9 +46,9 @@ export function AmbientShelf({ rows, onSelect, onToggleStar, selectedUid }: Ambi
         <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-ink-dim">
           Open all day
         </span>
-        <span className="font-mono text-[11px] text-ink-faint">{rows.length}</span>
+        <span className="font-mono text-[11px] text-ink-faint">{rows.length.toLocaleString()}</span>
         {starred > 0 ? (
-          <span className="font-mono text-[11px] text-star">★ {starred}</span>
+          <span className="font-mono text-[11px] text-star">★ {starred.toLocaleString()}</span>
         ) : null}
         <span className="ml-auto text-[11px] text-ink-fringe">
           drop-in — no start time to make
@@ -52,7 +56,9 @@ export function AmbientShelf({ rows, onSelect, onToggleStar, selectedUid }: Ambi
       </button>
 
       {open ? (
-        <div className="flex flex-col border-t border-line-soft">
+        // The header's own border-b already divides header from rows; this
+        // container carries the band's soft bottom edge instead.
+        <div className="flex flex-col border-b border-line-soft">
           {rows.map((row) => (
             <div
               key={row.uid}

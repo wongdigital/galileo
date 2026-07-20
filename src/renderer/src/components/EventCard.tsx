@@ -35,6 +35,7 @@
  */
 
 import { useEffect, useMemo, type ReactNode } from 'react'
+import { useCardMotion } from '@renderer/components/CardPresence'
 import { buildRow, dayLabel, formatTime, localParts, type RowState } from '@renderer/state/derive'
 import { useEnrichmentSource } from '@renderer/state/enrichmentIndex'
 import { useSpine } from '@renderer/state/spine'
@@ -147,9 +148,20 @@ interface CardShellProps {
  * the bottom of whichever view is hosting it.
  */
 export function CardShell({ eyebrow, dismissLabel, onDismiss, children }: CardShellProps) {
+  const motion = useCardMotion()
+  const closing = motion?.closing ?? false
   return (
     <aside
-      className="pointer-events-auto absolute right-4 bottom-4 z-10 flex max-h-[min(70%,28rem)] w-[320px] flex-col rounded-xl border border-line-strong bg-ground-850/95 p-3.5 shadow-[0_18px_40px_-20px_rgba(0,0,0,0.9)] backdrop-blur"
+      className={[
+        'pointer-events-auto absolute right-4 bottom-4 z-10 flex max-h-[min(70%,28rem)] w-[320px] flex-col rounded-xl border border-line-strong bg-ground-850/95 p-3.5 shadow-[0_18px_40px_-20px_rgba(0,0,0,0.9)] backdrop-blur',
+        // Middle-out wipe on mount; the reverse plays while CardPresence holds
+        // the card in the tree, then onExited lets it unmount (U9).
+        closing ? 'card-conceal' : 'card-reveal',
+      ].join(' ')}
+      onAnimationEnd={(e) => {
+        // Animation events bubble; only the shell's own conceal ends the close.
+        if (closing && e.target === e.currentTarget) motion?.onExited()
+      }}
       // The canvas sits underneath and stays interactive; a click inside the
       // panel must not travel down and re-pin whatever is behind it.
       onClick={(e) => e.stopPropagation()}

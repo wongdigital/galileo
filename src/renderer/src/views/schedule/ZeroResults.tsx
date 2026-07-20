@@ -48,7 +48,7 @@ export function ZeroResults({ filter, relaxations, onApply, onClear }: ZeroResul
                 className="rounded-full border border-line bg-ground-850 px-3 py-1.5 text-[12px] text-ink-dim transition-colors duration-150 hover:border-lumen-dim hover:text-ink-bright"
               >
                 {relaxation.part.label}{' '}
-                <span className="font-mono text-[11px] text-lumen">+{relaxation.count}</span>
+                <span className="font-mono text-[11px] text-lumen">+{relaxation.count.toLocaleString()}</span>
               </button>
             ))}
           </div>
