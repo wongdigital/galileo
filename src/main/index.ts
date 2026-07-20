@@ -1,9 +1,10 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { join } from 'node:path'
 import { fetchScheduleSources } from './fetchExecutor'
 import { SnapshotStore } from './snapshotStore'
 import { StarStore, registerStarIpc } from './starStore'
 import { registerIcsIpc } from './icsExport'
+import { KeyStore, registerLlmIpc } from './llm'
 import { CURRENT_SCHEMA_VERSION, acknowledgeChanges, buildDataset, resolveRefresh } from '../shared/schedule'
 import type { DatasetProjection, FetchedDataset, ScheduleEvent } from '../shared/schedule'
 
@@ -52,6 +53,7 @@ const SITE = process.env.SCHED_SITE ?? 'https://comiccon2026.sched.com'
 
 let store: SnapshotStore
 let stars: StarStore
+let keys: KeyStore
 
 /**
  * The canonical event list, resolved from main's own snapshots.
@@ -122,11 +124,16 @@ function registerIpc(): void {
   // the canonical-event resolver so neither has to reach for renderer state.
   registerStarIpc(ipcMain, stars)
   registerIcsIpc(ipcMain, canonicalEvents)
+
+  // The chat concierge: the key store never leaves main, and the tool loop
+  // reads the same canonical events the export does.
+  registerLlmIpc(ipcMain, { keyStore: keys, getEvents: canonicalEvents })
 }
 
 app.whenReady().then(() => {
   store = new SnapshotStore(app.getPath('userData'))
   stars = new StarStore(app.getPath('userData'))
+  keys = new KeyStore(app.getPath('userData'), safeStorage)
   registerIpc()
   createWindow()
 
