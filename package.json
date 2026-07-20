@@ -23,6 +23,8 @@
     "@ai-sdk/anthropic": "^4.0.16",
     "@ai-sdk/openai": "^4.0.16",
     "@anthropic-ai/sdk": "^0.112.3",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@openrouter/ai-sdk-provider": "^3.0.0",
     "@tanstack/react-virtual": "^3.14.6",
     "ai": "^7.0.31",

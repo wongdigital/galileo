@@ -61,10 +61,13 @@
   --color-cancelled: #d1566a;
   --color-new: #5ed6a0;
 
-  /* Type scale — tight, editorial, with a monospace for times and IDs */
-  --font-display: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+  /* Type scale — IBM Plex, bundled via Fontsource (imports in main.tsx).
+     One family for display and body; the display token stays separate so a
+     future display face is a one-line change. System stacks trail as
+     first-frame fallbacks while the woff2s parse. */
+  --font-display: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', ui-monospace, Menlo, monospace;
 
   /* Motion — a deliberate spec, not framework defaults (U9 elevates this) */
   --ease-instrument: cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -182,6 +185,14 @@
   ::-webkit-scrollbar-thumb:hover {
     background: var(--color-line-strong);
   }
+
+  /* Stock-look audit (U9): the search field's built-in grey ✕ is Chromium
+     chrome, unstylable and off-palette. Clearing stays one select-all away,
+     and the filter tab's own Clear affordances cover the mouse path. */
+  input[type='search']::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 /* Card motion (U9) — the docked cards open with a middle-out wipe: a slit at
@@ -205,12 +216,49 @@
   animation: card-wipe var(--duration-card-out) var(--ease-instrument) reverse both;
 }
 
+/* Empty/loading states (U9) — the InstrumentState constellation. While
+   loading, dots brighten in slow sequence, a signal arriving; the stagger
+   comes from nth-of-type so the component stays markup-only. */
+@keyframes constellation-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.state-loading .state-dot {
+  animation: constellation-pulse 2.6s var(--ease-instrument) infinite;
+}
+.state-loading .state-dot:nth-of-type(2) {
+  animation-delay: 0.3s;
+}
+.state-loading .state-dot:nth-of-type(3) {
+  animation-delay: 0.6s;
+}
+.state-loading .state-dot:nth-of-type(4) {
+  animation-delay: 0.9s;
+}
+.state-loading .state-dot:nth-of-type(5) {
+  animation-delay: 1.2s;
+}
+.state-loading .state-dot:nth-of-type(6) {
+  animation-delay: 1.5s;
+}
+
 /* Reduced motion: cards appear and disappear instantly. CardPresence checks
    the same query and skips the exit phase, so nothing waits on an animation
-   that will never fire. */
+   that will never fire. The constellation holds at mid-brightness instead of
+   pulsing. */
 @media (prefers-reduced-motion: reduce) {
   .card-reveal,
   .card-conceal {
     animation: none;
+  }
+  .state-loading .state-dot {
+    animation: none;
+    opacity: 0.6;
   }
 }

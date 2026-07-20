@@ -2,6 +2,21 @@ import { useState } from 'react'
 import { PROVIDERS, type KeyStatus, type ModelChoice, type ProviderId } from '@shared/chat'
 import { PROVIDER_LABEL, bridge } from './chatModels'
 
+/** The selects run `appearance-none` — Chromium's built-in arrow is the one
+ *  browser-drawn mark in the app, and the stock-look audit (U9) evicts it.
+ *  This chevron is the replacement, positioned over the select's pr-8. */
+function SelectChevron() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 10 6"
+      className="pointer-events-none absolute top-1/2 right-3 h-1.5 w-2.5 -translate-y-1/2 text-ink-faint"
+    >
+      <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 /**
  * The model-and-keys screen. Provider → model → key, top to bottom. Draft keys
  * are held per provider so switching providers to enter a second key never
@@ -87,18 +102,21 @@ export function KeySetup({
 
       <label className="flex flex-col gap-1">
         <span className="text-[11px] text-ink-faint">Provider</span>
-        <select
-          value={provider}
-          onChange={(e) => onProviderChange(e.target.value as ProviderId)}
-          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12.5px] text-ink focus:border-lumen-dim focus:outline-none"
-        >
-          {PROVIDERS.map((p) => (
-            <option key={p} value={p}>
-              {PROVIDER_LABEL[p]}
-              {keyStatus?.[p] ? ' •' : ''}
-            </option>
-          ))}
-        </select>
+        <span className="relative">
+          <select
+            value={provider}
+            onChange={(e) => onProviderChange(e.target.value as ProviderId)}
+            className="w-full appearance-none rounded-md border border-line bg-ground-850 py-1.5 pl-2.5 pr-8 text-[12.5px] text-ink focus:border-lumen-dim focus:outline-none"
+          >
+            {PROVIDERS.map((p) => (
+              <option key={p} value={p}>
+                {PROVIDER_LABEL[p]}
+                {keyStatus?.[p] ? ' •' : ''}
+              </option>
+            ))}
+          </select>
+          <SelectChevron />
+        </span>
       </label>
 
       <label className="flex flex-col gap-1">
@@ -113,21 +131,24 @@ export function KeySetup({
             ↻
           </button>
         </span>
-        <select
-          value={isCustomModel ? 'custom' : selectedModel}
-          onChange={(e) => {
-            const value = e.target.value
-            onModelChange(provider, value === 'custom' ? '' : value)
-          }}
-          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12.5px] text-ink focus:border-lumen-dim focus:outline-none"
-        >
-          {modelChoices.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.label}
-            </option>
-          ))}
-          <option value="custom">Custom…</option>
-        </select>
+        <span className="relative">
+          <select
+            value={isCustomModel ? 'custom' : selectedModel}
+            onChange={(e) => {
+              const value = e.target.value
+              onModelChange(provider, value === 'custom' ? '' : value)
+            }}
+            className="w-full appearance-none rounded-md border border-line bg-ground-850 py-1.5 pl-2.5 pr-8 text-[12.5px] text-ink focus:border-lumen-dim focus:outline-none"
+          >
+            {modelChoices.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+            <option value="custom">Custom…</option>
+          </select>
+          <SelectChevron />
+        </span>
       </label>
 
       {isCustomModel ? (
@@ -136,7 +157,7 @@ export function KeySetup({
           value={selectedModel}
           onChange={(e) => onModelChange(provider, e.target.value)}
           placeholder="Exact model id"
-          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-fringe focus:border-lumen-dim focus:outline-none"
+          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-faint focus:border-lumen-dim focus:outline-none"
         />
       ) : null}
 
@@ -147,7 +168,7 @@ export function KeySetup({
           value={draftKeys[provider] ?? ''}
           onChange={(e) => setDraftKeys((prev) => ({ ...prev, [provider]: e.target.value }))}
           placeholder={saved ? `${PROVIDER_LABEL[provider]} key saved — enter to replace` : `${PROVIDER_LABEL[provider]} API key`}
-          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-fringe focus:border-lumen-dim focus:outline-none"
+          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-faint focus:border-lumen-dim focus:outline-none"
         />
       </label>
 

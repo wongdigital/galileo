@@ -170,13 +170,21 @@ function Shell() {
   const { view } = useSpine()
   return (
     <div className="flex h-full flex-col bg-ground-900">
-      <header className="titlebar-drag flex h-[52px] shrink-0 items-center justify-between border-b border-line px-5 pl-20">
-        <div className="flex items-baseline gap-2.5">
-          <span className="font-display text-[15px] font-semibold tracking-tight text-ink-bright">
-            Galileo
-          </span>
-          <span className="text-[11px] text-ink-faint">2026</span>
-        </div>
+      <header className="titlebar-drag relative flex h-[52px] shrink-0 items-center justify-between border-b border-line px-5 pl-20">
+        {/* The dataset badge — a button because switching cons is the planned
+            gesture here; disabled until there is a second dataset to switch to. */}
+        <button
+          type="button"
+          disabled
+          className="rounded border border-line px-2 py-1 text-[11px] text-ink-dim"
+        >
+          San Diego 2026
+        </button>
+        {/* Centered on the window, not the flex row — absolute so the uneven
+            widths of the badge and the toggles cannot pull it off-axis. */}
+        <span className="font-display absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[15px] font-bold tracking-tight text-ink-bright">
+          Galileo
+        </span>
         <div className="flex items-center gap-2">
           <ThemeToggle />
           <ViewToggle />

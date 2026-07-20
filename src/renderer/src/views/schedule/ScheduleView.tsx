@@ -12,6 +12,7 @@ import { useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { CardPresence } from '@renderer/components/CardPresence'
 import { EventCard } from '@renderer/components/EventCard'
+import { InstrumentState } from '@renderer/components/InstrumentState'
 import { useSlidingIndicator } from '@renderer/components/useSlidingIndicator'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
@@ -129,10 +130,12 @@ export function ScheduleView() {
             onClear={() => spine.setFilter(EMPTY_FILTER)}
           />
         ) : (
-          <div className="flex flex-1 items-center justify-center px-8 text-center text-[13px] text-ink-faint">
-            {spine.status === 'loading'
-              ? 'Fetching the schedule…'
-              : 'No schedule data yet. Refresh to fetch from Sched.'}
+          <div className="flex flex-1 items-center justify-center">
+            <InstrumentState eyebrow="5-Day schedule" loading={spine.status === 'loading'}>
+              {spine.status === 'loading'
+                ? 'Fetching the schedule…'
+                : 'No schedule data yet. Refresh to fetch from Sched.'}
+            </InstrumentState>
           </div>
         )
       ) : (
