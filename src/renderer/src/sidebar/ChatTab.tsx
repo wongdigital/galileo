@@ -456,7 +456,10 @@ function Bubble({
                   <button
                     type="button"
                     onClick={() => onOpen(uid)}
-                    className="cursor-pointer bg-transparent align-baseline font-semibold text-ink-bright underline-offset-2 transition-all duration-150 hover:underline"
+                    // `inline` + `text-left`: a button defaults to inline-block
+                    // and text-align:center, so a title that wraps two lines
+                    // centers. Flow it like the surrounding text instead.
+                    className="inline cursor-pointer bg-transparent p-0 text-left align-baseline font-semibold text-ink-bright underline-offset-2 transition-all duration-150 hover:underline"
                   >
                     {children}
                   </button>
