@@ -54,6 +54,22 @@ const chipShape = {
 
 const chipSchema = z.object(chipShape)
 
+/** ISO → "Fri, Jul 24, 10:00 AM", in Pacific (where the con runs). Given to the
+ *  model so it repeats a correct time instead of computing a weekday itself. */
+function formatWhen(iso: string | null): string | null {
+  if (!iso) return null
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Los_Angeles',
+  }).format(date)
+}
+
 export function buildTools(ctx: ToolContext, capture: TurnCapture) {
   const eventByUid = new Map(ctx.events.map((event) => [event.uid, event]))
   const candByUid = new Map(ctx.candidates.map((candidate) => [candidate.uid, candidate]))
@@ -65,6 +81,16 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
   }
   const summaries = (uids: readonly string[]): EventSummary[] =>
     uids.map(summarize).filter((s): s is EventSummary => s !== null)
+
+  // Model-facing rows carry a ready-to-read time so the model never computes a
+  // weekday from a raw ISO string — models get that wrong (2026-07-24 is a
+  // Friday, and more than one guessed Thursday). Pacific, because the con is.
+  const toolRow = (uid: string): (EventSummary & { when: string | null }) | null => {
+    const summary = summarize(uid)
+    return summary ? { ...summary, when: formatWhen(summary.start) } : null
+  }
+  const toolRows = (uids: readonly string[]): (EventSummary & { when: string | null })[] =>
+    uids.map(toolRow).filter((r): r is EventSummary & { when: string | null } => r !== null)
 
   /** Distinct values present in the corpus for a dimension — the pool
    *  `resolveFacetValue` maps a loose model token onto. */
@@ -93,7 +119,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
   return {
     apply_filters: tool({
       description:
-        'Set the filter, lens, and/or view. Returns the real matched count and the resolved filter. Use the count it reports, never your own.',
+        'Set the filter, lens, and/or view. Returns the real matched count, the resolved filter, and a small sample of the actual matched events (with their genres and franchises). Use the count it reports, and describe only the events in the sample — do not guess the composition of the rest.',
       inputSchema: z.object({
         clear: z.boolean().optional().describe('Reset to an empty filter before applying the rest'),
         add: z.array(chipSchema).optional(),
@@ -108,11 +134,21 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
         capture.toolTrace.push('apply_filters')
         const { resolved, unresolved } = resolveChips(intent.add ?? [])
         const nextFilter = applyFilterIntent(ctx.filter, { ...intent, add: resolved })
-        const count = applyFilter(ctx.candidates, nextFilter, ctx.matchContext).length
+        const matched = applyFilter(ctx.candidates, nextFilter, ctx.matchContext)
         capture.patch = { filter: nextFilter, lens: intent.lens, view: intent.view }
+        // Return the real matched events (a sample), so the model describes what
+        // actually matched instead of inventing which franchise each one carries.
+        const sample = matched.slice(0, 6).flatMap((c) => {
+          const row = toolRow(c.uid)
+          return row
+            ? [{ uid: row.uid, title: row.title, when: row.when, room: row.room, genres: c.dimensions.genre ?? [], franchises: c.dimensions.ip ?? [] }]
+            : []
+        })
         return {
-          count,
+          count: matched.length,
           applied: describeFilter(nextFilter).map((part) => part.label),
+          sample,
+          sampleNote: matched.length > sample.length ? `showing ${sample.length} of ${matched.length}` : 'complete',
           unresolved,
           lens: intent.lens ?? null,
           view: intent.view ?? null,
@@ -150,7 +186,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
         const { resolved, unresolved } = resolveChips(add ?? [])
         const state = applyFilterIntent(EMPTY_FILTER, { text: text ?? undefined, add: resolved })
         const hits = applyFilter(ctx.candidates, state, ctx.matchContext)
-        const shown = summaries(hits.slice(0, limit ?? 10).map((c) => c.uid))
+        const shown = toolRows(hits.slice(0, limit ?? 10).map((c) => c.uid))
         return { count: hits.length, shown: shown.length, events: shown, unresolved }
       },
     }),
@@ -169,6 +205,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
           found: true as const,
           uid,
           title: event.title,
+          when: formatWhen(event.start),
           start: event.start,
           room: event.room,
           track: event.track,
@@ -185,7 +222,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
       inputSchema: z.object({}),
       execute: async () => {
         capture.toolTrace.push('get_starred')
-        const events = summaries(
+        const events = toolRows(
           ctx.candidates.filter((c) => ctx.matchContext.isStarred(c.uid)).map((c) => c.uid),
         )
         return { count: events.length, events }

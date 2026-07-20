@@ -16,10 +16,10 @@ import type { FilterCandidate, MatchContext } from '../../shared/filter/types'
 import type { ChatError, ChatRequest, ChatResponse } from '../../shared/chat'
 import type { ScheduleEvent } from '../../shared/schedule'
 
-/** A hub the model can call at most this many tool rounds before it must
- *  answer. Six covers "look up values, then filter, then read one event" with
- *  headroom, and stops a loop that never converges. */
-const MAX_STEPS = 6
+/** How many tool rounds the model gets before it must answer. Enough for a
+ *  real chain — search, read, then propose or filter — with headroom for a
+ *  retry, while still stopping a loop that never converges. */
+const MAX_STEPS = 8
 
 export interface GenerateArgs {
   model: LanguageModel
@@ -32,7 +32,7 @@ export interface GenerateArgs {
 export type GenerateFn = (args: GenerateArgs) => Promise<{ text: string }>
 
 const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, signal }) => {
-  const { text } = await generateText({
+  const result = await generateText({
     model,
     system,
     messages,
@@ -40,7 +40,18 @@ const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, sig
     stopWhen: stepCountIs(MAX_STEPS),
     abortSignal: signal,
   })
-  return { text }
+  if (result.text.trim()) return { text: result.text }
+
+  // The model stopped on a tool call without a written reply (it hit the step
+  // cap, or just declined to summarize). Force one final answer from everything
+  // it gathered, tools withheld, so the user never gets silence.
+  const summary = await generateText({
+    model,
+    system,
+    messages: [...messages, ...result.response.messages],
+    abortSignal: signal,
+  })
+  return { text: summary.text }
 }
 
 export interface ChatDeps {
@@ -105,7 +116,9 @@ export async function runChatTurn(deps: ChatDeps, request: ChatRequest): Promise
     return {
       ok: true,
       turn: {
-        message: { role: 'assistant', content: text },
+        // A model that ends on a tool call returns undefined text; never let
+        // that reach the renderer as a literal "undefined".
+        message: { role: 'assistant', content: text ?? '' },
         patch: capture.patch,
         eventUids: capture.eventUids,
         proposedAction: capture.proposedAction,

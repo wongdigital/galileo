@@ -98,9 +98,15 @@ describe('search_events', () => {
     const { tools } = setup()
     const result = await run(tools.search_events, { text: 'lucasfilm' })
     expect(result.count).toBe(1)
-    expect(result.events).toEqual([
-      { uid: 'a', title: 'Panel A', start: '2026-07-24T10:00:00-07:00', room: 'Room 0', track: '1: Programs' },
-    ])
+    expect(result.events[0]).toMatchObject({
+      uid: 'a',
+      title: 'Panel A',
+      start: '2026-07-24T10:00:00-07:00',
+      room: 'Room 0',
+      track: '1: Programs',
+    })
+    // Model-facing rows carry a preformatted, correct-weekday time.
+    expect(result.events[0].when).toBe('Fri, Jul 24, 10:00 AM')
   })
 
   it('caps the shown list while reporting the full count', async () => {
