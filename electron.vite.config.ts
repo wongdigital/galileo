@@ -37,6 +37,16 @@ export default defineConfig({
         '@data': resolve('data'),
       },
     },
-    build: { rollupOptions: { input: resolve('src/renderer/index.html') } },
+    build: {
+      rollupOptions: {
+        // Two windows, two documents: the main app and the standalone About
+        // window (src/main/aboutWindow.ts opens the latter). Each is its own
+        // entry so the About window ships only its own small bundle.
+        input: {
+          index: resolve('src/renderer/index.html'),
+          about: resolve('src/renderer/about.html'),
+        },
+      },
+    },
   },
 })

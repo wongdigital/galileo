@@ -228,6 +228,7 @@ function Sidebar() {
 
 function Shell() {
   const { view } = useSpine()
+
   return (
     <div className="flex h-full flex-col bg-ground-900">
       <header className="titlebar-drag relative flex h-[52px] shrink-0 items-center justify-between border-b border-line px-5 pl-20">

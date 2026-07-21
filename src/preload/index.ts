@@ -15,6 +15,10 @@ import type { FilterCandidate } from '../shared/filter/types'
  * whole IPC namespace and make the allowlist meaningless.
  */
 const api = {
+  app: {
+    /** The running app version, read by the standalone About window. */
+    version: (): Promise<string> => ipcRenderer.invoke('app:version'),
+  },
   schedule: {
     // `acceptAnyway` is the drift warning's "use the new data anyway" override.
     refresh: (options?: { acceptAnyway?: boolean }) => ipcRenderer.invoke('schedule:refresh', options),

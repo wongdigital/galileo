@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { join } from 'node:path'
+import { installAppMenu } from './appMenu'
 import { fetchScheduleSources } from './fetchExecutor'
 import { SnapshotStore } from './snapshotStore'
 import { StarStore, registerStarIpc } from './starStore'
@@ -108,6 +109,10 @@ async function refreshSchedule(acceptAnyway: boolean): Promise<DatasetProjection
  * Star and export channels register themselves; see starStore and icsExport.
  */
 function registerIpc(): void {
+  // The About dialog reads the running version from here rather than importing
+  // package.json into the renderer bundle.
+  ipcMain.handle('app:version', () => app.getVersion())
+
   ipcMain.handle('schedule:refresh', async (_e, options?: { acceptAnyway?: boolean }) => {
     return refreshSchedule(options?.acceptAnyway ?? false)
   })
@@ -147,6 +152,7 @@ app.whenReady().then(() => {
   stars = new StarStore(app.getPath('userData'))
   keys = new KeyStore(app.getPath('userData'), safeStorage)
   registerIpc()
+  installAppMenu()
   createWindow()
 
   app.on('activate', () => {
