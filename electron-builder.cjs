@@ -1,5 +1,5 @@
 /**
- * electron-builder packaging — macOS arm64 (dmg + zip).
+ * electron-builder packaging — macOS arm64 (dmg + zip) and Windows x64 (NSIS).
  *
  * Signing + notarization are OPT-IN via environment. `npm run dist` on a machine
  * without the Apple App Store Connect API-key vars produces exactly the
@@ -48,6 +48,13 @@ module.exports = {
   copyright: '© 2026 Roger Wong',
   directories: { buildResources: 'build', output: 'dist' },
 
+  // Where `electron-builder --publish always` uploads. Owner/repo are explicit
+  // rather than inferred: package.json has no `repository` field, so without
+  // this the GitHub provider has nothing to resolve. This only names the
+  // destination; nothing publishes unless `--publish` is passed (the Windows CI
+  // job does; local `npm run dist` / `dist:win` do not).
+  publish: { provider: 'github', owner: 'wongdigital', repo: 'galileo' },
+
   // The default matcher already includes out/, package.json, and the PRODUCTION
   // node_modules — which must ship, because main externalizes its dependencies
   // (electron.vite.config.ts: externalizeDepsPlugin) rather than bundling them.
@@ -84,4 +91,24 @@ module.exports = {
   },
 
   dmg: { title: '${productName} ${version}' },
+
+  // Windows x64 NSIS installer. Unsigned for now — no Authenticode cert is
+  // wired up, so SmartScreen will warn on first run until one is (a code-signing
+  // cert now has to live in a cloud HSM / signing service, not a local .pfx).
+  // The build itself succeeds unsigned; adding a signing hook later is additive.
+  win: {
+    icon: 'build/icon.ico',
+    target: [{ target: 'nsis', arch: ['x64'] }],
+  },
+
+  // Assisted installer (not one-click): the user sees a wizard and can pick the
+  // install directory. perMachine:false keeps it a per-user install so no admin
+  // elevation is needed — which also means an unsigned build never triggers a
+  // UAC prompt on top of the SmartScreen warning.
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: true,
+    artifactName: '${productName}-${version}-setup.${ext}',
+  },
 }

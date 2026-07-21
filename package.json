@@ -19,6 +19,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "dist": "electron-vite build && electron-builder --mac",
+    "dist:win": "electron-vite build && electron-builder --win",
     "pack": "electron-vite build && electron-builder --mac --dir",
     "start": "electron-vite preview",
     "typecheck": "tsc --build --force",

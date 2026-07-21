@@ -84,13 +84,16 @@ Vite is pinned to `^7` and `@vitejs/plugin-react` to `^5`: electron-vite 5 peers
 ### Building the apps
 
 ```sh
-npm run dist    # electron-vite build + electron-builder → dist/Galileo-<version>-arm64.dmg (+ .zip)
-npm run pack    # unpacked .app in dist/ for a quick local check, no dmg
+npm run dist     # electron-vite build + electron-builder → dist/Galileo-<version>-arm64.dmg (+ .zip)
+npm run dist:win # electron-vite build + electron-builder → dist/Galileo-<version>-setup.exe (NSIS)
+npm run pack     # unpacked .app in dist/ for a quick local check, no dmg
 ```
 
 `npm run dist` produces an Apple Silicon macOS build. Signing and notarization are opt-in: with no Apple credentials in the environment the output is unsigned (ad-hoc), which is fine for local use. For a release, install a "Developer ID Application" cert in the keychain and export `APPLE_API_KEY` (path to an App Store Connect API `.p8`), `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`; the same `npm run dist` then signs and notarizes.
 
-Windows packaging and cross-platform release builds via GitHub Actions are in progress; the published macOS and Windows binaries under [Releases](https://github.com/wongdigital/galileo/releases) come from that pipeline.
+`npm run dist:win` produces a Windows x64 NSIS installer. It runs on Windows (or any host with the electron-builder Windows toolchain); the practical path is CI. The build is unsigned — no Authenticode cert is wired up yet, so Windows SmartScreen warns on first run.
+
+The Windows installer is built in CI: `.github/workflows/release-windows.yml` runs on a `windows-latest` runner when you push a version tag (e.g. `git tag v0.1.0 && git push --tags`), builds the NSIS installer, and uploads it to a **draft** GitHub [Release](https://github.com/wongdigital/galileo/releases) — review the draft and publish it yourself. The macOS build is currently produced locally with `npm run dist` (signed via the Apple env vars above).
 
 ### Data pipeline
 
