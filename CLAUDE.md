@@ -9,6 +9,7 @@ TypeScript, Vite via electron-vite, Tailwind v4. AGPL-3.0.
 npm run dev        # launch the app
 npm run typecheck  # tsc --build --force (run this, not `tsc` bare)
 npm test           # vitest run
+npm run lint       # eslint-plugin-jsx-a11y (strict) over renderer TSX — a11y gate only
 npm run fetch      # pull today's schedule from Sched into data/
 npm run build      # electron-vite build
 ```

@@ -163,6 +163,13 @@ export function CardShell({ eyebrow, dismissLabel, onDismiss, children }: CardSh
   }, [closing, onDismiss])
 
   return (
+    // The onClick below is a propagation boundary, not an affordance — the
+    // canvas underneath stays interactive, so a click inside the panel must not
+    // travel down and re-pin whatever is behind it. There is no action to
+    // trigger, so a keyboard listener would be meaningless, and the
+    // Escape-to-close handler above already gives keyboard parity. jsx-a11y
+    // flags the whole element, so the disable rides the opening tag.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events
     <aside
       className={[
         'pointer-events-auto absolute right-4 bottom-4 z-10 flex max-h-[min(70%,28rem)] w-[320px] flex-col rounded-xl border border-line-strong bg-ground-850/95 p-3.5 shadow-[0_18px_40px_-20px_var(--color-card-shadow)] backdrop-blur',
@@ -174,8 +181,6 @@ export function CardShell({ eyebrow, dismissLabel, onDismiss, children }: CardSh
         // Animation events bubble; only the shell's own conceal ends the close.
         if (closing && e.target === e.currentTarget) motion?.onExited()
       }}
-      // The canvas sits underneath and stays interactive; a click inside the
-      // panel must not travel down and re-pin whatever is behind it.
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex shrink-0 items-start justify-between gap-2">

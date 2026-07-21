@@ -89,7 +89,13 @@ export function Bubble({
           <Markdown
             components={{
               // Links open in the user's browser, never navigate the app window.
-              a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+              // children is pulled out explicitly (not left in the spread) so the
+              // anchor's link text is visible to a11y tooling, not just at runtime.
+              a: ({ node: _node, children, ...props }) => (
+                <a {...props} target="_blank" rel="noreferrer">
+                  {children}
+                </a>
+              ),
               // A bolded event name we recognize becomes a link to its card.
               strong: ({ node: _node, children }) => {
                 // Only link when the title resolves to exactly one event — two

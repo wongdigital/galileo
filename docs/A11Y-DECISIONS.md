@@ -53,3 +53,24 @@ stale-data banner, chat tool-loop progress, and index loading; `role="alert"`
 only for the chat error banner. Result counts change on every chip click, so
 assertive would be hostile; the error banner is the one surface where missing
 it means a silently failed turn.
+
+## lint-gate (eslint-plugin-jsx-a11y)
+
+**Decision:** a static a11y lint gate at the `strict` profile (`npm run lint`,
+`eslint.config.js`), parsing TSX with `@babel/eslint-parser` rather than
+typescript-eslint.
+
+The gate exists so the AA work above cannot silently regress as the renderer
+changes; `strict` (not `recommended`) because the renderer already passes it
+with no changes, so there is no reason to lint below the AA target. The babel
+parser is deliberate: the repo pins `typescript@7` (native compiler), which
+typescript-eslint's peer range excludes and whose JS-API compatibility with
+typescript-estree is unproven—babel parses TSX from its own grammar with no
+dependency on the `typescript` package, and jsx-a11y needs only the JSX AST.
+
+Two findings surfaced on first run, both handled without lowering the bar: the
+Markdown link renderer in `ChatBubble` now pulls `children` out of the prop
+spread so the anchor's content is statically visible (behaviour-identical), and
+the `EventCard` shell's `onClick` carries a scoped disable—it is a propagation
+boundary, not an affordance (no action to key-trigger), and the panel already
+has keyboard parity through Escape-to-close.
