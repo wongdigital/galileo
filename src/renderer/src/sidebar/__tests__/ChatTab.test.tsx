@@ -439,18 +439,20 @@ describe('ChatTab', () => {
   })
 
   it('links a repeated title to its earliest sitting, and a unique title to its event', async () => {
-    // Same title, two sittings — dup-2 runs first, so the link must open it.
+    // Same title, three sittings — dup-2 runs first; dup-3 has no start at all,
+    // and the '~' sentinel must sort it after every real date, never "earliest".
     const DUP1 = event('dup-1', { title: 'Spotlight Panel', start: `${SAT}T14:00:00-07:00` })
     const DUP2 = event('dup-2', { title: 'Spotlight Panel', start: `${SAT}T09:00:00-07:00` })
+    const DUP3 = event('dup-3', { title: 'Spotlight Panel', start: null })
     const UNIQUE = event('unique-1', { title: 'Q&A: Where Do We Go? (Part 1)' })
     ;(window as unknown as { api: { schedule: { refresh: unknown } } }).api.schedule.refresh = vi
       .fn()
-      .mockResolvedValue({ events: [DUP1, DUP2, UNIQUE], changes: {}, fetchedAt: '2026-07-20T18:00:00.000Z', stale: false })
+      .mockResolvedValue({ events: [DUP1, DUP2, DUP3, UNIQUE], changes: {}, fetchedAt: '2026-07-20T18:00:00.000Z', stale: false })
     chat.mockResolvedValue({
       ok: true,
       turn: {
         message: { role: 'assistant', content: 'See **Spotlight Panel** and **Q&A: Where Do We Go? (Part 1)**.' },
-        eventUids: ['dup-1', 'dup-2', 'unique-1'],
+        eventUids: ['dup-1', 'dup-2', 'dup-3', 'unique-1'],
         toolTrace: ['search_events'],
       },
     })

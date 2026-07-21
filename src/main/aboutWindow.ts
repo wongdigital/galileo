@@ -1,5 +1,6 @@
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
+import { APP_NAME } from '../shared/app'
 
 /**
  * The standalone About window — a small, fixed, non-resizable window opened from
@@ -25,7 +26,7 @@ export function openAboutWindow(): void {
     fullscreenable: false,
     minimizable: false,
     show: false,
-    title: 'About Galileo',
+    title: `About ${APP_NAME}`,
     backgroundColor: '#07090e', // Observatory ground — no white flash
     titleBarStyle: 'hiddenInset',
     webPreferences: {
@@ -42,15 +43,29 @@ export function openAboutWindow(): void {
     aboutWindow = null
   })
 
+  // A failed load would otherwise strand an invisible singleton: ready-to-show
+  // never fires, and every later About click focuses a window nobody can see.
+  // Destroying it fires 'closed', which resets the singleton for a clean retry.
+  const discard = (): void => {
+    if (!window.isDestroyed()) window.destroy()
+  }
+  window.webContents.on('did-fail-load', discard)
+
   // External links (the author site, GitHub) open in the browser, never here.
+  // http(s) only: openExternal on an arbitrary scheme would hand the URL to
+  // whatever local protocol handler is registered for it.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    try {
+      const { protocol } = new URL(url)
+      if (protocol === 'https:' || protocol === 'http:') void shell.openExternal(url)
+    } catch {
+      // Unparseable URL — open nothing.
+    }
     return { action: 'deny' }
   })
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(`${process.env.ELECTRON_RENDERER_URL}/about.html`)
-  } else {
-    void window.loadFile(join(__dirname, '../renderer/about.html'))
-  }
+  const load = process.env.ELECTRON_RENDERER_URL
+    ? window.loadURL(`${process.env.ELECTRON_RENDERER_URL}/about.html`)
+    : window.loadFile(join(__dirname, '../renderer/about.html'))
+  load.catch(discard)
 }

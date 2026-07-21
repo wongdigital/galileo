@@ -64,22 +64,34 @@ const normalize = (value: string): string =>
 /**
  * Map a value the model asked for to a real value present in the corpus for
  * that dimension. Exact match on the normalized form first — so "Star Wars"
- * finds the slug "star-wars" directly — then a *unique* substring match so
- * "lego" finds "star-wars-lego" without a lookup round-trip. Two or more
- * substring hits is ambiguous and returns null rather than guessing; the
- * caller reports it back so the model can disambiguate or ask.
+ * finds the slug "star-wars" directly — then a *unique* token-subset match so
+ * "lego" finds "star-wars-lego" without a lookup round-trip.
+ *
+ * The partial stage compares token SETS, not raw substrings: one side's tokens
+ * must all appear in the other's. Raw `includes` had two failure modes — "war"
+ * matched inside "star wars", and a request like "lego star wars" against both
+ * 'star-wars' and 'star-wars-lego' resolved *confidently* to 'star-wars',
+ * silently dropping the qualifier. Under token subsets that request matches
+ * both values and correctly lands in the ambiguous path.
+ *
+ * Ambiguity returns null at BOTH stages (two corpus values normalizing
+ * identically is as unanswerable as two token-subset hits); the caller reports
+ * it back so the model can disambiguate or ask.
  */
 export function resolveFacetValue(requested: string, available: readonly string[]): string | null {
   const want = normalize(requested)
   if (!want) return null
 
-  for (const value of available) {
-    if (normalize(value) === want) return value
-  }
+  const exact = available.filter((value) => normalize(value) === want)
+  if (exact.length === 1) return exact[0]!
+  if (exact.length > 1) return null
 
+  const wantTokens = new Set(want.split(' '))
   const matches = available.filter((value) => {
-    const v = normalize(value)
-    return v.includes(want) || want.includes(v)
+    const valueTokens = new Set(normalize(value).split(' '))
+    const [small, large] =
+      valueTokens.size <= wantTokens.size ? [valueTokens, wantTokens] : [wantTokens, valueTokens]
+    return [...small].every((token) => large.has(token))
   })
   return matches.length === 1 ? matches[0]! : null
 }

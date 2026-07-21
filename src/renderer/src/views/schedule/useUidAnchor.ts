@@ -21,16 +21,27 @@ export function useUidAnchor(
   uids: readonly string[],
   /** Changing this drops the anchor and returns to the top — switching days is
    *  a deliberate move to somewhere else, not a swap under a fixed position. */
-  resetKey: string | null
+  resetKey: string | null,
+  /** Ids that may serve as the anchor. The All view's sticky day header is
+   *  force-included in the virtual range even when it sits far above the
+   *  viewport, so anchoring to it would snap the scroll back to the day's
+   *  first row on every rows-identity change (star click, refresh). */
+  anchorable?: (id: string) => boolean
 ): void {
   const anchor = useRef<string | null>(null)
   const previousUids = useRef(uids)
   const previousReset = useRef(resetKey)
 
-  // Runs after every commit, so the anchor is whatever is on screen right now.
+  // Runs after every commit, so the anchor is whatever is on screen right now —
+  // specifically the first *anchorable* item, skipping pinned headers.
   useEffect(() => {
-    const first = virtualizer.getVirtualItems()[0]
-    if (first) anchor.current = uids[first.index] ?? anchor.current
+    for (const item of virtualizer.getVirtualItems()) {
+      const id = uids[item.index]
+      if (id === undefined) continue
+      if (anchorable && !anchorable(id)) continue
+      anchor.current = id
+      break
+    }
   })
 
   useLayoutEffect(() => {

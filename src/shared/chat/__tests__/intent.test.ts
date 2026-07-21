@@ -131,4 +131,22 @@ describe('resolveFacetValue', () => {
     // collapsing to a space keeps it out.
     expect(resolveFacetValue('art', ['star-trek', 'art-illustration'])).toBe('art-illustration')
   })
+
+  it('matches whole tokens, not raw substrings', () => {
+    // "war" is inside the string "star wars" but is not one of its tokens —
+    // a raw includes() would have resolved it confidently.
+    expect(resolveFacetValue('war', ['star-wars', 'marvel'])).toBeNull()
+  })
+
+  it('treats a request that spans two values as ambiguous, not a confident hit', () => {
+    // "lego star wars" token-matches both 'star-wars' (subset) and
+    // 'star-wars-lego' (same set) — dropping the LEGO qualifier silently was
+    // the failure mode; null sends the model to list_facet_values instead.
+    expect(resolveFacetValue('lego star wars', ['star-wars', 'star-wars-lego'])).toBeNull()
+  })
+
+  it('returns null when two corpus values normalize identically', () => {
+    // The exact stage is as ambiguity-guarded as the token stage.
+    expect(resolveFacetValue('ana maria', ['Ana-Maria', 'Ana Maria'])).toBeNull()
+  })
 })

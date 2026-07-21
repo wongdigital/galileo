@@ -56,6 +56,10 @@ export interface ScheduleModel {
   classes: Map<string, EventClassification>
   facetsByUid: Map<string, EventFacets>
   candidates: FilterCandidate[]
+  /** True once the compiled people/franchise index has resolved for THIS
+   *  dataset — before that, candidates carry no person/ip dimensions, and
+   *  consumers that promise those (the chat) should hold their gates. */
+  enrichmentReady: boolean
   matchContext: MatchContext
 
   /** Filtered across all five days, which is the number the sidebar reports. */
@@ -90,12 +94,28 @@ interface ScheduleBase {
   liveUids: Set<string>
 }
 
+/** The enrichment-independent corpus pass: classifying and faceting depend on
+ *  the dataset alone, so they run once per events array no matter how many
+ *  enrichment sources come and go. */
+interface PlainBase {
+  classes: Map<string, EventClassification>
+  facetsByUid: Map<string, EventFacets>
+  byUid: Map<string, ScheduleEvent>
+  dayByUid: Map<string, string | null>
+  liveUids: Set<string>
+}
+
+const plainCache = new WeakMap<readonly ScheduleEvent[], PlainBase>()
+
 /**
  * One entry per live dataset, then one per enrichment source inside it. The
  * inner map holds at most two bases — the pre-enrichment one (built against the
  * shared EMPTY source on first render) and the enriched one — so instances that
  * resolve the index at different moments each hit a cached base instead of
- * ping-ponging the corpus pass between the two variants.
+ * ping-ponging the derivation between the two variants. Only the candidates
+ * differ between the two: the maps come from the shared plain pass, so their
+ * identities survive the enrichment flip and downstream memos keyed on them
+ * hold.
  */
 const baseCache = new WeakMap<readonly ScheduleEvent[], Map<EnrichmentSource, ScheduleBase>>()
 
@@ -103,18 +123,12 @@ const baseCache = new WeakMap<readonly ScheduleEvent[], Map<EnrichmentSource, Sc
  *  instances share the one empty derivation instead of each building theirs. */
 const NO_EVENTS: readonly ScheduleEvent[] = []
 
-function deriveBase(list: readonly ScheduleEvent[], enrichment: EnrichmentSource): ScheduleBase {
-  let bySource = baseCache.get(list)
-  if (!bySource) {
-    bySource = new Map()
-    baseCache.set(list, bySource)
-  }
-  const cached = bySource.get(enrichment)
+function derivePlain(list: readonly ScheduleEvent[]): PlainBase {
+  const cached = plainCache.get(list)
   if (cached) return cached
 
   const classes = classifyAll(list)
   const facetsByUid = new Map<string, EventFacets>()
-  const candidates: FilterCandidate[] = []
   const byUid = new Map<string, ScheduleEvent>()
   const dayByUid = new Map<string, string | null>()
 
@@ -126,6 +140,27 @@ function deriveBase(list: readonly ScheduleEvent[], enrichment: EnrichmentSource
     facetsByUid.set(event.uid, facets)
     byUid.set(event.uid, event)
     dayByUid.set(event.uid, facets.computed.day)
+  }
+
+  const plain: PlainBase = { classes, facetsByUid, byUid, dayByUid, liveUids: new Set(byUid.keys()) }
+  plainCache.set(list, plain)
+  return plain
+}
+
+function deriveBase(list: readonly ScheduleEvent[], enrichment: EnrichmentSource): ScheduleBase {
+  let bySource = baseCache.get(list)
+  if (!bySource) {
+    bySource = new Map()
+    baseCache.set(list, bySource)
+  }
+  const cached = bySource.get(enrichment)
+  if (cached) return cached
+
+  const plain = derivePlain(list)
+  const candidates: FilterCandidate[] = []
+  for (const event of list) {
+    // Set by derivePlain for exactly this list — the `!` states that invariant.
+    const facets = plain.facetsByUid.get(event.uid)!
     // People and franchises come from the compiled index, so the `person` and
     // `ip` dimensions the registry promised actually carry values — for the
     // Filters tab, and for the chat's chip resolution ("events with Scott
@@ -135,21 +170,14 @@ function deriveBase(list: readonly ScheduleEvent[], enrichment: EnrichmentSource
       buildCandidate({
         event,
         facets,
-        classification,
+        classification: plain.classes.get(event.uid),
         people: entry?.people,
         franchises: entry?.franchises,
       }),
     )
   }
 
-  const base: ScheduleBase = {
-    classes,
-    facetsByUid,
-    candidates,
-    byUid,
-    dayByUid,
-    liveUids: new Set(byUid.keys()),
-  }
+  const base: ScheduleBase = { ...plain, candidates }
   bySource.set(enrichment, base)
   return base
 }
@@ -238,6 +266,7 @@ export function useSchedule(): ScheduleModel {
     classes: base.classes,
     facetsByUid: base.facetsByUid,
     candidates: base.candidates,
+    enrichmentReady: enrichment.ready,
     matchContext,
     filteredCount: filtered.length,
     filteredUids,

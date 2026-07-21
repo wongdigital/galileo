@@ -14,6 +14,9 @@ const candidates: FilterCandidate[] = [
   },
   { uid: 'b', dimensions: { genre: ['Comedy'], ip: ['star-wars'] }, haystack: 'panel b star wars comedy' },
   { uid: 'c', dimensions: { genre: ['Horror'] }, haystack: 'panel c horror' },
+  // A slug whose human label spells differently ('Sci-Fi & Fantasy') plus a day
+  // value — the two label shapes the round-trip tests below exercise.
+  { uid: 'd', dimensions: { genre: ['scifi-fantasy'], day: ['2026-07-24'] }, haystack: 'panel d scifi' },
 ]
 
 const events: ScheduleEvent[] = candidates.map((candidate, i) => ({
@@ -93,6 +96,25 @@ describe('apply_filters', () => {
     expect(capture.patch?.lens).toBeUndefined()
   })
 
+  it('resolves an OVERRIDE label back to its slug when adding a chip', async () => {
+    // The system prompt tells the model to quote labels in prose; a label
+    // echoed back as a chip value must land on the slug the corpus carries.
+    const { tools, capture } = setup()
+    const result = await run(tools.apply_filters, { add: [{ dimension: 'genre', value: 'Sci-Fi & Fantasy' }] })
+    expect(result.unresolved).toEqual([])
+    expect(capture.patch?.filter?.chips).toEqual([{ dimension: 'genre', value: 'scifi-fantasy' }])
+    expect(result.count).toBe(1) // d
+  })
+
+  it('removes a chip addressed by its label, not just by its slug', async () => {
+    const { tools, capture } = setup()
+    await run(tools.apply_filters, { add: [{ dimension: 'genre', value: 'scifi-fantasy' }] })
+    // "remove the sci-fi filter" arrives as the label — it must still match
+    // the stored slug rather than silently no-opping.
+    await run(tools.apply_filters, { remove: [{ dimension: 'genre', value: 'Sci-Fi & Fantasy' }] })
+    expect(capture.patch?.filter?.chips).toEqual([])
+  })
+
   it('compounds a second apply_filters onto the first within the same turn', async () => {
     const { tools, capture } = setup()
     await run(tools.apply_filters, { add: [{ dimension: 'genre', value: 'horror' }] })
@@ -137,6 +159,14 @@ describe('list_facet_values', () => {
     const result = await run(tools.list_facet_values, { dimension: 'ip' })
     // The slug is the chip token; the label is what the model should quote.
     expect(result.values).toEqual([{ value: 'star-wars', label: 'Star Wars', count: 2 }])
+  })
+
+  it('labels day values as readable dates, never raw ISO strings', async () => {
+    // Models miscompute weekdays from ISO dates (the formatWhen lesson) — the
+    // label must arrive ready to quote.
+    const { tools } = setup()
+    const result = await run(tools.list_facet_values, { dimension: 'day' })
+    expect(result.values).toEqual([{ value: '2026-07-24', label: 'Fri Jul 24', count: 1 }])
   })
 })
 

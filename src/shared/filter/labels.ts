@@ -58,11 +58,10 @@ const OVERRIDES: Record<string, string> = {
 
 /**
  * Dimensions whose values are not vocabulary ids: person values are real names
- * ("Scott Snyder" — title-casing would mangle a hyphenated surname), room
- * values are Sched's verbatim strings, and day values are ISO dates that a
- * caller may want to format its own way. They pass through untouched.
+ * ("Scott Snyder" — title-casing would mangle a hyphenated surname) and room
+ * values are Sched's verbatim strings. They pass through untouched.
  */
-const VERBATIM_DIMENSIONS = new Set(['person', 'room', 'day'])
+const VERBATIM_DIMENSIONS = new Set(['person', 'room'])
 
 const titleCase = (id: string): string =>
   id
@@ -71,7 +70,27 @@ const titleCase = (id: string): string =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
+
+/** Noon UTC and UTC getters: the label for a `YYYY-MM-DD` must not depend on
+ *  which timezone the machine is in. Shared because both the sidebar chips and
+ *  the chat tools label day values — and models famously miscompute a weekday
+ *  from a raw ISO date, so the tool layer must never ship one as a "label". */
+export function dayLabel(day: string): { weekday: string; date: string } {
+  const d = new Date(`${day}T12:00:00Z`)
+  if (Number.isNaN(d.getTime())) return { weekday: '—', date: day }
+  return {
+    weekday: WEEKDAYS[d.getUTCDay()] ?? '—',
+    date: `${MONTHS[d.getUTCMonth()] ?? ''} ${d.getUTCDate()}`,
+  }
+}
+
 export function facetValueLabel(dimension: string, value: string): string {
+  if (dimension === 'day') {
+    const { weekday, date } = dayLabel(value)
+    return `${weekday} ${date}`
+  }
   if (VERBATIM_DIMENSIONS.has(dimension)) return value
   return OVERRIDES[value] ?? titleCase(value)
 }

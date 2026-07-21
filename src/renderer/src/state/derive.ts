@@ -38,19 +38,11 @@ export function formatTime(iso: string | null): string {
   return `${hour12}:${String(parts.minute).padStart(2, '0')}${meridiem}`
 }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
-
-/** Noon UTC and UTC getters: the label for a `YYYY-MM-DD` must not depend on
- *  which timezone the laptop is in. */
-export function dayLabel(day: string): { weekday: string; date: string } {
-  const d = new Date(`${day}T12:00:00Z`)
-  if (Number.isNaN(d.getTime())) return { weekday: '—', date: day }
-  return {
-    weekday: WEEKDAYS[d.getUTCDay()] ?? '—',
-    date: `${MONTHS[d.getUTCMonth()] ?? ''} ${d.getUTCDate()}`,
-  }
-}
+// The day formatter lives in the shared labels module now — main's chat tools
+// label day values too — and is re-exported here so view code keeps one import
+// site for schedule formatting.
+import { dayLabel } from '@shared/filter'
+export { dayLabel }
 
 export function durationLabel(minutes: number | null): string {
   if (minutes === null || minutes <= 0) return ''
@@ -177,27 +169,31 @@ export function buildDayRows(input: BuildRowsInput): DayRows {
 /**
  * One entry in the All view's virtual list: an event row, or a day divider that
  * precedes each day's first row (the sticky section headers, iOS-Contacts
- * style). A single-day list needs none — the day rail already names the day.
+ * style). A `null` day is the divider for dateless rows — rendered as
+ * "Unscheduled". A single-day list needs none — the day rail already names the
+ * day.
  */
 export type ScheduleListItem =
-  | { kind: 'header'; day: string }
+  | { kind: 'header'; day: string | null }
   | { kind: 'row'; row: RowModel }
 
 /**
  * Insert a day header before each day's first row. Rows must already be in
  * schedule order (buildDayRows sorts by start), so consecutive rows of the same
  * computed day group cleanly and each day appears exactly once. Rows with an
- * unknown day get no header and ride under whatever precedes them.
+ * unknown day sort to the end (startMs treats a missing start as Infinity) and
+ * get an "Unscheduled" divider — without one they would sit under the final
+ * day's sticky header, reading as that day's events.
  */
 export function withDayHeaders(
   rows: readonly RowModel[],
   dayByUid: ReadonlyMap<string, string | null>
 ): ScheduleListItem[] {
   const out: ScheduleListItem[] = []
-  let lastDay: string | null = null
+  let lastDay: string | null | undefined = undefined
   for (const row of rows) {
     const day = dayByUid.get(row.uid) ?? null
-    if (day && day !== lastDay) {
+    if (day !== lastDay) {
       out.push({ kind: 'header', day })
       lastDay = day
     }

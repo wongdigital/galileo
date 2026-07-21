@@ -38,8 +38,17 @@ function createWindow(): void {
   window.on('ready-to-show', () => window.show())
 
   // External links open in the user's browser, never in an app window.
+  // http(s) only: the chat renders model-authored markdown whose context
+  // includes third-party event prose, so a link here is not fully trusted —
+  // openExternal on an arbitrary scheme would hand it to whatever local
+  // protocol handler is registered (file:, vnc:, anything).
   window.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    try {
+      const { protocol } = new URL(url)
+      if (protocol === 'https:' || protocol === 'http:') void shell.openExternal(url)
+    } catch {
+      // Unparseable URL — open nothing.
+    }
     return { action: 'deny' }
   })
 

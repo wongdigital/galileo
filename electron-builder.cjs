@@ -17,8 +17,24 @@
 // build never hard-fails for lack of secrets. notarytool reads these three env
 // vars directly and infers the team from the issuer, so no teamId is needed in
 // config (APPLE_TEAM_ID, if set, only disambiguates the signing identity).
-const canNotarize = Boolean(
-  process.env.APPLE_API_KEY && process.env.APPLE_API_KEY_ID && process.env.APPLE_API_ISSUER,
+const appleVars = ['APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER']
+const applePresent = appleVars.filter((name) => process.env[name])
+const canNotarize = applePresent.length === appleVars.length
+
+// A partially-set trio is almost always a mistake (typo'd var, .env not
+// loaded) — say so loudly instead of silently producing an unsigned build the
+// release engineer believes is signed. And always name which branch this build
+// took, so the terminal record answers "was that dmg signed?".
+if (applePresent.length > 0 && !canNotarize) {
+  const missing = appleVars.filter((name) => !process.env[name])
+  console.warn(
+    `[electron-builder] Apple credentials INCOMPLETE (missing ${missing.join(', ')}) — building UNSIGNED.`,
+  )
+}
+console.log(
+  canNotarize
+    ? '[electron-builder] mac build: signed + notarized (Apple API credentials present)'
+    : '[electron-builder] mac build: UNSIGNED (ad-hoc); artifacts carry an -unsigned suffix',
 )
 
 const macSigning = canNotarize
@@ -48,11 +64,11 @@ module.exports = {
   copyright: '© 2026 Roger Wong',
   directories: { buildResources: 'build', output: 'dist' },
 
-  // Where `electron-builder --publish always` uploads. Owner/repo are explicit
-  // rather than inferred: package.json has no `repository` field, so without
-  // this the GitHub provider has nothing to resolve. This only names the
-  // destination; nothing publishes unless `--publish` is passed (the Windows CI
-  // job does; local `npm run dist` / `dist:win` do not).
+  // Where `electron-builder --publish always` uploads. Owner/repo are pinned
+  // explicitly rather than inferred from package.json's `repository` field, so
+  // the publish destination cannot drift if that field changes. This only names
+  // the destination; nothing publishes unless `--publish` is passed (the
+  // Windows CI job does; local `npm run dist` / `dist:win` do not).
   publish: { provider: 'github', owner: 'wongdigital', repo: 'galileo' },
 
   // The default matcher already includes out/, package.json, and the PRODUCTION
@@ -87,6 +103,10 @@ module.exports = {
       { target: 'dmg', arch: ['arm64'] },
       { target: 'zip', arch: ['arm64'] },
     ],
+    // Unsigned builds are named as such: a signed and an unsigned dmg would
+    // otherwise be byte-different but filename-identical, and a release upload
+    // by hand could not tell them apart.
+    ...(canNotarize ? {} : { artifactName: '${productName}-${version}-${arch}-unsigned.${ext}' }),
     ...macSigning,
   },
 

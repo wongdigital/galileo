@@ -74,17 +74,21 @@ export async function staleUids(
   const stale = new Set<string>()
   if (typeof crypto === 'undefined' || !crypto.subtle) return stale
 
-  for (const event of events) {
-    const entry = index.entries[event.uid]
-    if (!entry || entry.status !== 'ok') continue
-    // An `ok` entry with no hash means the compiler could not vouch for the
-    // text, which `joinEnrichment` also treats as drift rather than as a pass.
-    if (!entry.description_hash) {
-      stale.add(event.uid)
-      continue
-    }
-    if ((await sha16(event.description ?? '')) !== entry.description_hash) stale.add(event.uid)
-  }
+  // Hashes run concurrently — ~3,500 sequential awaited digests would serialize
+  // round-trip latency on the boot path for no reason.
+  await Promise.all(
+    events.map(async (event) => {
+      const entry = index.entries[event.uid]
+      if (!entry || entry.status !== 'ok') return
+      // An `ok` entry with no hash means the compiler could not vouch for the
+      // text, which `joinEnrichment` also treats as drift rather than as a pass.
+      if (!entry.description_hash) {
+        stale.add(event.uid)
+        return
+      }
+      if ((await sha16(event.description ?? '')) !== entry.description_hash) stale.add(event.uid)
+    }),
+  )
   return stale
 }
 
@@ -113,7 +117,16 @@ async function computeSource(events: readonly ScheduleEvent[]): Promise<Enrichme
     // extracted people or franchises.
     return { ready: true, entryFor: () => null, stats: { entries: 0, stale: 0 } }
   }
-  const stale = await staleUids(events, index)
+  // An unexpected throw here would cache a REJECTED promise per dataset —
+  // every hook instance stuck at EMPTY with an unhandled rejection and no
+  // retry. Degrade like the no-index path instead.
+  let stale: Set<string>
+  try {
+    stale = await staleUids(events, index)
+  } catch (error) {
+    console.warn('[enrichment] staleness pass failed; running without the index:', error)
+    return { ready: true, entryFor: () => null, stats: { entries: 0, stale: 0 } }
+  }
   return {
     ready: true,
     entryFor: (uid) => {
@@ -127,11 +140,17 @@ async function computeSource(events: readonly ScheduleEvent[]): Promise<Enrichme
 
 /**
  * Loads the index once and re-runs the staleness pass whenever the dataset
- * swaps. Returns a not-ready source until both finish, which the graph renders
- * as a loading state rather than as an empty corpus.
+ * swaps. Returns a not-ready source until the pass for the CURRENT events
+ * array finishes — including across a refresh: the state pairs each resolved
+ * source with the events it was computed against, so a swapped dataset reads
+ * EMPTY immediately instead of borrowing the previous dataset's source, whose
+ * staleness set vouches for descriptions that may just have changed.
  */
 export function useEnrichmentSource(events: readonly ScheduleEvent[] | undefined): EnrichmentSource {
-  const [source, setSource] = useState<EnrichmentSource>(EMPTY)
+  const [state, setState] = useState<{
+    events: readonly ScheduleEvent[] | undefined
+    source: EnrichmentSource
+  }>({ events: undefined, source: EMPTY })
 
   useEffect(() => {
     if (!events) return
@@ -143,7 +162,7 @@ export function useEnrichmentSource(events: readonly ScheduleEvent[] | undefined
       sourceCache.set(events, pending)
     }
     void pending.then((computed) => {
-      if (!cancelled) setSource(computed)
+      if (!cancelled) setState({ events, source: computed })
     })
 
     return () => {
@@ -151,5 +170,5 @@ export function useEnrichmentSource(events: readonly ScheduleEvent[] | undefined
     }
   }, [events])
 
-  return source
+  return state.events === events ? state.source : EMPTY
 }

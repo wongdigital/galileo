@@ -54,6 +54,23 @@ only for the chat error banner. Result counts change on every chip click, so
 assertive would be hostile; the error banner is the one surface where missing
 it means a silently failed turn.
 
+## inline-event-link (ChatBubble bolded titles)
+
+**Decision:** `<span role="link" tabIndex={0}>` with an Enter-only key handler
+for the clickable event titles inside chat replies, rather than a `<button>` or
+an `<a>`.
+
+All three are conformant; the span is the one that renders correctly. A button
+is an atomic inline box that cannot fragment across lines—a long title wrapping
+inside a list item dragged the bullet marker to the title's last line, because
+an inline-block's baseline is its final line box. An `<a>` without `href` is
+not focusable (and `anchor-is-valid` rightly rejects `href="#"`); giving it the
+event's Sched URL would make middle-click navigate away from the in-app card
+the click is meant to open. `role="link"` matches the interaction (navigate to
+the event's card) and the WAI-ARIA link pattern's Enter-only activation—Space
+is a button convention, not a link one. The accessible name is the visible
+title text; focus styling is the browser's default focus-visible outline.
+
 ## lint-gate (eslint-plugin-jsx-a11y)
 
 **Decision:** a static a11y lint gate at the `strict` profile (`npm run lint`,

@@ -320,8 +320,19 @@ describe('withDayHeaders', () => {
     expect(withDayHeaders([], new Map())).toEqual([])
   })
 
-  it('emits no header for a row whose day is unknown', () => {
-    const rows = [row('x')]
-    expect(withDayHeaders(rows, new Map([['x', null]]))).toEqual([{ kind: 'row', row: rows[0] }])
+  it('labels rows without a day under an Unscheduled (null) header', () => {
+    // Dateless rows sort to the end (startMs → Infinity); without their own
+    // divider they would visually belong to the last real day.
+    const rows = [row('a'), row('x')]
+    const days = new Map<string, string | null>([
+      ['a', '2026-07-24'],
+      ['x', null],
+    ])
+    expect(withDayHeaders(rows, days)).toEqual([
+      { kind: 'header', day: '2026-07-24' },
+      { kind: 'row', row: rows[0] },
+      { kind: 'header', day: null },
+      { kind: 'row', row: rows[1] },
+    ])
   })
 })

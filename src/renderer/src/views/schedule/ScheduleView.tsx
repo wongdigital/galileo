@@ -37,16 +37,22 @@ const FULL_WEEKDAY: Record<string, string> = {
   Sat: 'Saturday',
 }
 
-/** The sticky day divider in the All view. Opaque so rows scroll under it. */
-function DayHeader({ day }: { day: string }) {
-  const { weekday, date } = dayLabel(day)
+/** The sticky day divider in the All view. Opaque so rows scroll under it.
+ *  A null day is the dateless tail of the list — "Unscheduled", so those rows
+ *  don't read as belonging to the last real day. */
+function DayHeader({ day }: { day: string | null }) {
+  const label = day ? dayLabel(day) : null
   return (
     <div className="flex h-8 items-center gap-2 border-b border-line-soft bg-ground-900/95 px-4 backdrop-blur-sm">
       <span className="font-mono text-[10.5px] tracking-[0.15em] text-ink-dim uppercase">
-        {FULL_WEEKDAY[weekday] ?? weekday}
+        {label ? (FULL_WEEKDAY[label.weekday] ?? label.weekday) : 'Unscheduled'}
       </span>
-      <span className="text-ink-fringe">·</span>
-      <span className="font-mono text-[10.5px] text-ink-faint">{date}</span>
+      {label ? (
+        <>
+          <span className="text-ink-fringe">·</span>
+          <span className="font-mono text-[10.5px] text-ink-faint">{label.date}</span>
+        </>
+      ) : null}
     </div>
   )
 }
@@ -154,27 +160,31 @@ export function ScheduleView() {
   )
   const activeStickyRef = useRef(-1)
 
+  // Keep the day header for the current section rendered even when it has
+  // scrolled above the window, so it can pin to the top (the Contacts effect).
+  const stickyRangeExtractor = useCallback(
+    (range: Range) => {
+      const active = [...stickyIndexes].reverse().find((i) => range.startIndex >= i) ?? -1
+      activeStickyRef.current = active
+      const next = new Set(defaultRangeExtractor(range))
+      if (active >= 0) next.add(active)
+      return [...next].sort((a, b) => a - b)
+    },
+    [stickyIndexes],
+  )
+
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (index) => (items[index]?.kind === 'header' ? HEADER_HEIGHT : ROW_HEIGHT),
     overscan: 12,
     getItemKey: (index) => itemKeys[index] ?? index,
-    // Keep the day header for the current section rendered even when it has
-    // scrolled above the window, so it can pin to the top (the Contacts effect).
-    rangeExtractor: useCallback(
-      (range: Range) => {
-        const active = [...stickyIndexes].reverse().find((i) => range.startIndex >= i) ?? -1
-        activeStickyRef.current = active
-        const next = new Set(defaultRangeExtractor(range))
-        if (active >= 0) next.add(active)
-        return [...next].sort((a, b) => a - b)
-      },
-      [stickyIndexes],
-    ),
+    // Only the All view has headers to pin; the single-day path keeps the
+    // library's zero-overhead default extractor.
+    rangeExtractor: isAll ? stickyRangeExtractor : defaultRangeExtractor,
   })
 
-  useUidAnchor(virtualizer, itemKeys, model.activeDay)
+  useUidAnchor(virtualizer, itemKeys, model.activeDay, (key) => !key.startsWith('hdr:'))
 
   const empty = model.rows.length === 0 && model.ambient.length === 0 && model.ghosts.length === 0
 

@@ -84,9 +84,10 @@ function DimensionSection({ dimension }: { dimension: FilterDimension }) {
     [candidates, filter, matchContext, dimension.id],
   )
 
-  // A dimension with no values in the corpus renders nothing at all. This is
-  // how `ip` and `person` stay registered in the engine while their compiled
-  // data has not reached the renderer yet — no placeholder, no empty section.
+  // A dimension with no values in the corpus renders nothing at all — no
+  // placeholder, no empty section. `ip` and `person` pass through here briefly
+  // at boot (their values arrive when the compiled index resolves async) and
+  // simply appear once the enriched candidates land.
   if (options.length === 0) return null
 
   const shown = expanded ? options : options.slice(0, VISIBLE_VALUES)

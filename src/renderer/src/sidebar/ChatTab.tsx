@@ -34,7 +34,7 @@ import { KeySetup } from './ChatKeySetup'
 
 export function ChatTab() {
   const spine = useSpine()
-  const { candidates, byUid } = useSchedule()
+  const { candidates, byUid, enrichmentReady } = useSchedule()
 
   const [entries, setEntries] = useState<ChatEntry[]>([])
   const [input, setInput] = useState('')
@@ -70,15 +70,19 @@ export function ChatTab() {
     })
   }, [])
 
-  // Keep main's tool-loop index in step with the renderer's. The candidate
-  // array is identity-stable, so this fires on dataset changes, not renders.
+  // Keep main's tool-loop index in step with the renderer's. Candidates change
+  // identity twice per dataset — once immediately (no person/ip dimensions
+  // yet) and once when the compiled enrichment index resolves — and both are
+  // synced. The composer only unlocks on the ENRICHED sync: a turn grounded on
+  // the pre-enrichment index would answer "who is Scott Snyder?" with a
+  // confident, false "not in this schedule".
   useEffect(() => {
     const api = bridge()
     if (!api || candidates.length === 0) return
     void api.syncDataset(candidates).then((result) => {
-      if ((result?.received ?? 0) > 0) setDatasetReady(true)
+      if ((result?.received ?? 0) > 0 && enrichmentReady) setDatasetReady(true)
     })
-  }, [candidates])
+  }, [candidates, enrichmentReady])
 
   useEffect(() => {
     // Guarded: jsdom elements have no scrollTo, and a new transcript entry
@@ -417,6 +421,9 @@ function EmptyState() {
         <li>"who's on the Lucasfilm panel?"</li>
         <li>"show these as a people graph"</li>
       </ul>
+      {/* ink-faint, not ink-fringe: fringe is reserved for decorative marks
+          and sits below AA contrast for readable text. */}
+      <p className="mt-3 text-[11px]">AI may make mistakes.</p>
     </div>
   )
 }

@@ -2,14 +2,20 @@ name: Release (Windows)
 
 # Builds the Windows x64 NSIS installer and uploads it to a GitHub Release.
 #
-# Trigger: pushing a version tag (e.g. `v0.1.0`), or a manual run from the
-# Actions tab. electron-builder creates/updates a DRAFT release named after the
-# package.json version, so nothing goes public until you review the draft and
-# click "Publish release" yourself.
+# Trigger: pushing a version tag (e.g. `v0.1.0`) publishes to the DRAFT release
+# named after the package.json version — nothing goes public until you review
+# the draft and click "Publish release" yourself. A manual run from the Actions
+# tab builds and keeps the installer as a run artifact only; it never touches a
+# release, because a dispatch from an arbitrary branch has no tag to signal
+# which version it is meant to be.
 #
 # The build is UNSIGNED — there is no Authenticode cert wired up yet, so first
 # run shows a SmartScreen warning. Adding a signing step later is additive and
 # does not change this workflow's shape.
+#
+# Actions are pinned to commit SHAs (tag as comment): a moved v4 tag on a
+# compromised action would otherwise run attacker code holding this job's
+# contents:write token.
 
 on:
   push:
@@ -25,14 +31,32 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Don't write the contents:write token into .git/config — npm ci runs
+          # dependency lifecycle scripts, and they have no business reading it.
+          # electron-builder gets the token via the step-scoped GH_TOKEN below.
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
 
       - run: npm ci
+
+      # A tag build must match the version electron-builder will publish under:
+      # the release name/tag comes from package.json, not from the pushed ref,
+      # so a forgotten version bump would silently upload into the wrong draft.
+      - name: Verify tag matches package.json version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $pkg — bump the version or fix the tag." >&2
+            exit 1
+          fi
 
       # The project's bar: typecheck and tests both pass before a build ships.
       # Both are cross-platform (tests run in the node environment). Drop these
@@ -41,15 +65,18 @@ jobs:
       - run: npm test
 
       # electron-vite compiles main/preload/renderer into out/; electron-builder
-      # packages it into the NSIS installer and publishes the draft release.
+      # packages it into the NSIS installer. Only tag builds publish (draft
+      # release); dispatch builds stop at the run artifact below.
       - run: npm run build
-      - run: npx electron-builder --win --publish always
+      - run: npx electron-builder --win --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Also keep the installer on the run page, so it's grabbable even if the
-      # release upload is ever the thing that fails.
-      - uses: actions/upload-artifact@v4
+      # release upload is the thing that fails — hence !cancelled(), because the
+      # default step condition would skip this on exactly that failure.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
         with:
           name: galileo-windows-setup
           path: dist/*.exe
