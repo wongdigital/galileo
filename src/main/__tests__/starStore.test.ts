@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +14,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  chmodSync(join(base, 'schedule'), 0o755)
   rmSync(base, { recursive: true, force: true })
 })
 
@@ -78,7 +77,12 @@ describe('StarStore', () => {
   it('echoes back the previous list when the write fails, so the loss is visible now', () => {
     store.write([star('a')])
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    chmodSync(join(base, 'schedule'), 0o500) // read-only directory: rename cannot land
+    // Occupy the store's deterministic temp path with a directory, so the temp
+    // write fails on every platform while stars.json stays intact for the
+    // echo. (The old injection — chmod 0o500 on the parent directory — is a
+    // no-op on Windows, where a directory's mode does not block writes into it,
+    // and the Windows CI run caught exactly that.)
+    mkdirSync(`${file()}.${process.pid}.tmp`)
 
     const echoed = store.write([star('a'), star('b')])
 
