@@ -18,6 +18,35 @@ import { SpineProvider } from '../spine'
 import { useSchedule, type ScheduleModel } from '../useSchedule'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 
+/** sha256('') truncated to 16 hex chars — the fixture events carry empty
+ *  descriptions, so this is the hash the staleness pass must agree with. */
+const { HASH_OF_EMPTY } = vi.hoisted(() => ({ HASH_OF_EMPTY: 'e3b0c44298fc1c14' }))
+
+// A tiny synthetic index instead of the 1.2 MB compiled one, mirroring the
+// useEntityMap suite. p1 carries a person and a franchise so the tests can see
+// the enrichment join land in the candidate dimensions.
+vi.mock('@data/enrichment.json', () => ({
+  default: {
+    schema_version: 1,
+    generated_at: '2026-07-18T00:00:00Z',
+    provenance: {
+      model: 'test',
+      batch_id: 'test',
+      franchise_seed_version: 1,
+      system_prompt_sha: 'test',
+      event_count: 0,
+    },
+    entries: {
+      p1: {
+        status: 'ok',
+        description_hash: HASH_OF_EMPTY,
+        people: [{ name: 'Ada Vance', role: 'moderator' }],
+        franchises: [{ surface_text: 'Star Wars', canonical: 'star-wars' }],
+      },
+    },
+  },
+}))
+
 function event(uid: string, title: string): ScheduleEvent {
   return {
     uid,
@@ -76,6 +105,15 @@ describe('useSchedule — the shared corpus pass', () => {
       )
     })
     await waitFor(() => expect(first?.byUid.size).toBe(2))
+    // Wait past the async enrichment join on both instances — the base swaps
+    // identity once when the index resolves, and comparing across that swap
+    // would race it.
+    const personDims = (model?: ScheduleModel) =>
+      model?.candidates.find((c) => c.uid === 'p1')?.dimensions.person
+    await waitFor(() => {
+      expect(personDims(first)).toEqual(['Ada Vance'])
+      expect(personDims(second)).toEqual(['Ada Vance'])
+    })
 
     // `toBe`, not `toEqual`: equal-but-distinct maps would mean the corpus
     // pass ran twice, which is exactly the regression.
@@ -83,5 +121,33 @@ describe('useSchedule — the shared corpus pass', () => {
     expect(second?.classes).toBe(first?.classes)
     expect(second?.facetsByUid).toBe(first?.facetsByUid)
     expect(second?.candidates).toBe(first?.candidates)
+  })
+
+  it('joins the compiled index into the person and ip dimensions', async () => {
+    let model: ScheduleModel | undefined
+    function Probe() {
+      model = useSchedule()
+      return null
+    }
+
+    await act(async () => {
+      render(
+        <SpineProvider>
+          <Probe />
+        </SpineProvider>,
+      )
+    })
+
+    // The join is what makes "events with <person>" resolvable as a chip — in
+    // the Filters tab and in the chat's chip resolution alike.
+    await waitFor(() => {
+      const p1 = model?.candidates.find((c) => c.uid === 'p1')
+      expect(p1?.dimensions.person).toEqual(['Ada Vance'])
+      expect(p1?.dimensions.ip).toEqual(['star-wars'])
+    })
+    // An event without an index entry simply carries no person/ip values.
+    const p2 = model?.candidates.find((c) => c.uid === 'p2')
+    expect(p2?.dimensions.person).toBeUndefined()
+    expect(p2?.dimensions.ip).toBeUndefined()
   })
 })

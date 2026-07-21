@@ -22,6 +22,7 @@
 
 import { useMemo } from 'react'
 import { classifyAll, applyFacets, type EventClassification, type EventFacets } from '@shared/enrichment'
+import { useEnrichmentSource, type EnrichmentSource } from './enrichmentIndex'
 import {
   applyFilter,
   buildCandidate,
@@ -89,15 +90,26 @@ interface ScheduleBase {
   liveUids: Set<string>
 }
 
-/** One entry per live dataset — in practice one, briefly two across a swap. */
-const baseCache = new WeakMap<readonly ScheduleEvent[], ScheduleBase>()
+/**
+ * One entry per live dataset, then one per enrichment source inside it. The
+ * inner map holds at most two bases — the pre-enrichment one (built against the
+ * shared EMPTY source on first render) and the enriched one — so instances that
+ * resolve the index at different moments each hit a cached base instead of
+ * ping-ponging the corpus pass between the two variants.
+ */
+const baseCache = new WeakMap<readonly ScheduleEvent[], Map<EnrichmentSource, ScheduleBase>>()
 
 /** Stable stand-in for "no dataset yet", so pre-load renders across all
  *  instances share the one empty derivation instead of each building theirs. */
 const NO_EVENTS: readonly ScheduleEvent[] = []
 
-function deriveBase(list: readonly ScheduleEvent[]): ScheduleBase {
-  const cached = baseCache.get(list)
+function deriveBase(list: readonly ScheduleEvent[], enrichment: EnrichmentSource): ScheduleBase {
+  let bySource = baseCache.get(list)
+  if (!bySource) {
+    bySource = new Map()
+    baseCache.set(list, bySource)
+  }
+  const cached = bySource.get(enrichment)
   if (cached) return cached
 
   const classes = classifyAll(list)
@@ -114,7 +126,20 @@ function deriveBase(list: readonly ScheduleEvent[]): ScheduleBase {
     facetsByUid.set(event.uid, facets)
     byUid.set(event.uid, event)
     dayByUid.set(event.uid, facets.computed.day)
-    candidates.push(buildCandidate({ event, facets, classification }))
+    // People and franchises come from the compiled index, so the `person` and
+    // `ip` dimensions the registry promised actually carry values — for the
+    // Filters tab, and for the chat's chip resolution ("events with Scott
+    // Snyder" must resolve as a person chip, not fall back to text search).
+    const entry = enrichment.entryFor(event.uid)
+    candidates.push(
+      buildCandidate({
+        event,
+        facets,
+        classification,
+        people: entry?.people,
+        franchises: entry?.franchises,
+      }),
+    )
   }
 
   const base: ScheduleBase = {
@@ -125,7 +150,7 @@ function deriveBase(list: readonly ScheduleEvent[]): ScheduleBase {
     dayByUid,
     liveUids: new Set(byUid.keys()),
   }
-  baseCache.set(list, base)
+  bySource.set(enrichment, base)
   return base
 }
 
@@ -135,10 +160,15 @@ export function useSchedule(): ScheduleModel {
   const events = dataset?.events
   const changes = dataset?.changes
 
-  // Layer 1 — dataset only. The expensive pass, shared across instances; the
-  // memo is only here so *this* instance re-reads the cache exactly when its
-  // events identity moves.
-  const base = useMemo(() => deriveBase(events ?? NO_EVENTS), [events])
+  // The compiled people/franchise index. Resolves asynchronously after the
+  // first render, at which point Layer 1 rebuilds once with `person` and `ip`
+  // dimensions populated — and the new candidates identity re-syncs the chat.
+  const enrichment = useEnrichmentSource(events)
+
+  // Layer 1 — dataset + enrichment source. The expensive pass, shared across
+  // instances; the memo is only here so *this* instance re-reads the cache
+  // exactly when its inputs' identities move.
+  const base = useMemo(() => deriveBase(events ?? NO_EVENTS, enrichment), [events, enrichment])
 
   // Layer 2 — star and change membership. Rebuilt on a star click, but only
   // two Sets, so the click stays instant at corpus scale.

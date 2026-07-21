@@ -7,9 +7,11 @@
  * needs people and franchises, so this module answers all three points rather
  * than relaxing the rule.
  *
- * - **Large** — loaded through a dynamic import, so it is a separate chunk
- *   fetched the first time the graph is opened. The 5-day view, which is what
- *   the app boots into, never pays for it.
+ * - **Large** — loaded through a dynamic import, so it stays a separate chunk
+ *   off the boot-critical bundle. `useSchedule` now consumes it too (the
+ *   `person`/`ip` filter dimensions join against it), so it loads shortly after
+ *   boot rather than on first graph open — but asynchronously, behind the first
+ *   paint of the 5-day list.
  * - **Stale** — the hash check runs here, in the renderer, against Web Crypto.
  *   Same algorithm as the compiler (sha256, first 16 hex chars), so an event
  *   whose description was rewritten since the compile degrades to no people and
