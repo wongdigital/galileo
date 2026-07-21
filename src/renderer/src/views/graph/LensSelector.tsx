@@ -13,7 +13,9 @@ import { SegmentedThumb } from '@renderer/components/SegmentedThumb'
 import { useSlidingIndicator } from '@renderer/components/useSlidingIndicator'
 
 const LABELS: Record<LensId, { label: string; hint: string }> = {
-  ip: { label: 'IP', hint: 'shares a franchise' },
+  // "Franchises", not "IP": attendees say franchise; IP is trade-press jargon.
+  // The lens id stays `ip` — it is an identity, not a label.
+  ip: { label: 'Franchises', hint: 'shares a franchise' },
   people: { label: 'People', hint: 'shares a named person' },
   facets: { label: 'Genre', hint: 'shares a genre' },
 }

@@ -613,7 +613,7 @@ export function GraphView() {
         {allFringe ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-8 flex justify-center">
             <div className="pointer-events-auto max-w-[420px] rounded-lg border border-line bg-ground-850/95 px-3.5 py-2.5 text-center text-[12px] leading-relaxed text-ink-dim backdrop-blur">
-              No {LENS_LABEL(lens)} hubs here — nothing in this scope shares one.{' '}
+              No hubs under {LENS_LABEL(lens)}—nothing in this scope shares one.{' '}
               {lensesWithHubs.length > 0 ? (
                 <>
                   {lensesWithHubs.slice(0, 2).map((entry, i) => (

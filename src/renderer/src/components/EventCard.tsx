@@ -393,7 +393,7 @@ export function EventCard({ uid, onDismiss }: EventCardProps) {
 
         {franchises.length > 0 ? (
           <div className="mt-2.5 border-t border-line-soft pt-2" data-testid="event-franchises">
-            <SectionLabel>IP</SectionLabel>
+            <SectionLabel>FRANCHISES</SectionLabel>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {franchises.map((label) => (
                 <span
