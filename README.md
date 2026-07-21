@@ -21,9 +21,13 @@ Want to build it yourself instead? See [For developers](#for-developers).
 
 The main view is a five-day list of the whole public program. Filter by track, day, room, and sub-category to cut thousands of events down to the handful you care about, and star the ones you want to keep. Stars and filters persist between launches.
 
+![Galileo's five-day list, filtered to Movies and Programs, with an event card open for the Spaceballs Comic-Con panel](docs/images/galileo-5-day.png)
+
 ### The relatedness map
 
 The second view is a map that connects the schedule by who and what is in it. **Entities**—a person, a franchise, a genre—are hubs sized by how many events they cover; **events** are dots; and a line joins each event to each entity it carries. A lens picks which kind of entity is drawn, and the map only ever shows what your current filter holds, so narrowing the list narrows the map.
+
+![Galileo's relatedness map under the Franchises lens, with hubs like Marvel, Star Wars, Disney, and DC sized by how many events they cover](docs/images/galileo-node-graph.png)
 
 Click a hub or a dot to pin it and open a card. It's the same card the list shows, so a starred, moved event looks identical whether you meet it as a row, as a dot, or on the map. Events no hub claims aren't hidden—they drift into a dim halo at the rim, still hoverable.
 
@@ -32,6 +36,8 @@ An event that repeats shows its other sittings as "Also runs" on its card.
 ### The chat concierge (bring your own key)
 
 The Chat tab is an optional natural-language way to search, filter, and plan—"show me horror on Saturday", "who's on the Marvel panel", "star the Lucasfilm panel". It stays off until you add your own API key; browse, filter, map, and export need no key and no account.
+
+![Galileo's chat concierge answering a request for horror and Star Wars recommendations, with matching sessions listed beside the schedule](docs/images/galileo-chat.png)
 
 Add a key in the Chat tab. Galileo works with Anthropic, OpenAI, or OpenRouter—you only need one. The key is encrypted at rest through the OS keychain (Electron `safeStorage`) and lives only in the main process: it never crosses into the renderer, and it never leaves your machine except in requests to the provider you picked.
 
