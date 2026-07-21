@@ -49,6 +49,9 @@ import {
 export interface ScheduleModel {
   /** Every live event, by UID — the lookup the star button and the row need. */
   byUid: Map<string, ScheduleEvent>
+  /** Each event's computed con-day — what the All view groups its sticky
+   *  headers by, so they match the day-rail buckets exactly. */
+  dayByUid: Map<string, string | null>
   classes: Map<string, EventClassification>
   facetsByUid: Map<string, EventFacets>
   candidates: FilterCandidate[]
@@ -201,6 +204,7 @@ export function useSchedule(): ScheduleModel {
 
   return {
     byUid: base.byUid,
+    dayByUid: base.dayByUid,
     classes: base.classes,
     facetsByUid: base.facetsByUid,
     candidates: base.candidates,

@@ -12,6 +12,7 @@ import {
   resolveActiveDay,
   ALL_DAYS,
   rowStates,
+  withDayHeaders,
 } from '../derive'
 import type { Change, ScheduleEvent } from '@shared/schedule'
 import type { EventClassification } from '@shared/enrichment'
@@ -282,5 +283,45 @@ describe('buildGhostRows', () => {
     const ghosts = buildGhostRows(stars, new Set(['live']))
     expect(ghostsForDay(ghosts, '2026-07-25').map((g) => g.star.uid)).toEqual(['dateless', 'gone'])
     expect(ghostsForDay(ghosts, '2026-07-24').map((g) => g.star.uid)).toEqual(['dateless'])
+  })
+})
+
+describe('withDayHeaders', () => {
+  const input = {
+    classes: new Map<string, EventClassification>(),
+    changes: {} as Record<string, Change[]>,
+    starredUids: new Set<string>(),
+  }
+  const row = (uid: string) => buildRow(event(uid), input)
+
+  it('inserts one header before each day, once, in row order', () => {
+    const rows = [row('a'), row('b'), row('c'), row('d')]
+    const days = new Map<string, string | null>([
+      ['a', '2026-07-24'],
+      ['b', '2026-07-24'],
+      ['c', '2026-07-25'],
+      ['d', '2026-07-26'],
+    ])
+    const shape = withDayHeaders(rows, days).map((it) =>
+      it.kind === 'header' ? `H:${it.day}` : `R:${it.row.uid}`,
+    )
+    expect(shape).toEqual([
+      'H:2026-07-24',
+      'R:a',
+      'R:b',
+      'H:2026-07-25',
+      'R:c',
+      'H:2026-07-26',
+      'R:d',
+    ])
+  })
+
+  it('returns an empty list for no rows', () => {
+    expect(withDayHeaders([], new Map())).toEqual([])
+  })
+
+  it('emits no header for a row whose day is unknown', () => {
+    const rows = [row('x')]
+    expect(withDayHeaders(rows, new Map([['x', null]]))).toEqual([{ kind: 'row', row: rows[0] }])
   })
 })

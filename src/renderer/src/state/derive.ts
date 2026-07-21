@@ -174,6 +174,38 @@ export function buildDayRows(input: BuildRowsInput): DayRows {
   return { rows: rows.sort(order), ambient: ambient.sort(order) }
 }
 
+/**
+ * One entry in the All view's virtual list: an event row, or a day divider that
+ * precedes each day's first row (the sticky section headers, iOS-Contacts
+ * style). A single-day list needs none — the day rail already names the day.
+ */
+export type ScheduleListItem =
+  | { kind: 'header'; day: string }
+  | { kind: 'row'; row: RowModel }
+
+/**
+ * Insert a day header before each day's first row. Rows must already be in
+ * schedule order (buildDayRows sorts by start), so consecutive rows of the same
+ * computed day group cleanly and each day appears exactly once. Rows with an
+ * unknown day get no header and ride under whatever precedes them.
+ */
+export function withDayHeaders(
+  rows: readonly RowModel[],
+  dayByUid: ReadonlyMap<string, string | null>
+): ScheduleListItem[] {
+  const out: ScheduleListItem[] = []
+  let lastDay: string | null = null
+  for (const row of rows) {
+    const day = dayByUid.get(row.uid) ?? null
+    if (day && day !== lastDay) {
+      out.push({ kind: 'header', day })
+      lastDay = day
+    }
+    out.push({ kind: 'row', row })
+  }
+  return out
+}
+
 // ---------- days ----------
 
 export interface DayBucket {

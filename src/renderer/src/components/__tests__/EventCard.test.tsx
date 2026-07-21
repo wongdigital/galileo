@@ -172,7 +172,7 @@ describe('a live event', () => {
     await mountCard('panel')
 
     expect(await screen.findByText('Drawing Monsters for a Living')).toBeTruthy()
-    expect(screen.getByText('10:00a')).toBeTruthy()
+    expect(screen.getByText('Sat 10:00a')).toBeTruthy()
     expect(screen.getByText('Room 6DE')).toBeTruthy()
     expect(screen.getByText(/inking teeth/)).toBeTruthy()
   })
@@ -259,7 +259,7 @@ describe('a UID the feed no longer carries', () => {
     await mountCard('vanished', { onDismiss })
 
     expect(await screen.findByText('Secret Screening')).toBeTruthy()
-    expect(screen.getByText('8:00p')).toBeTruthy()
+    expect(screen.getByText('Sat 8:00p')).toBeTruthy()
     expect(screen.getByText('Hall H')).toBeTruthy()
     expect(screen.getByText(/NO LONGER LISTED/)).toBeTruthy()
     // The plan is still a plan — the card stays until the user closes it.

@@ -8,15 +8,15 @@
  * "where I am in 3,474 events".
  */
 
-import { useMemo, useRef } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
+import { useCallback, useMemo, useRef } from 'react'
+import { defaultRangeExtractor, useVirtualizer, type Range } from '@tanstack/react-virtual'
 import { CardPresence } from '@renderer/components/CardPresence'
 import { EventCard } from '@renderer/components/EventCard'
 import { InstrumentState } from '@renderer/components/InstrumentState'
 import { useSlidingIndicator } from '@renderer/components/useSlidingIndicator'
 import { useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
-import { ALL_DAYS } from '@renderer/state/derive'
+import { ALL_DAYS, dayLabel, withDayHeaders, type ScheduleListItem } from '@renderer/state/derive'
 import { EMPTY_FILTER } from '@shared/filter'
 import { AmbientShelf } from './AmbientShelf'
 import { EventRow, ROW_HEIGHT } from './EventRow'
@@ -24,6 +24,32 @@ import { GhostBand } from './GhostBand'
 import { StaleBanner } from './StaleBanner'
 import { ZeroResults } from './ZeroResults'
 import { useUidAnchor } from './useUidAnchor'
+
+const HEADER_HEIGHT = 32
+
+const FULL_WEEKDAY: Record<string, string> = {
+  Sun: 'Sunday',
+  Mon: 'Monday',
+  Tue: 'Tuesday',
+  Wed: 'Wednesday',
+  Thu: 'Thursday',
+  Fri: 'Friday',
+  Sat: 'Saturday',
+}
+
+/** The sticky day divider in the All view. Opaque so rows scroll under it. */
+function DayHeader({ day }: { day: string }) {
+  const { weekday, date } = dayLabel(day)
+  return (
+    <div className="flex h-8 items-center gap-2 border-b border-line-soft bg-ground-900/95 px-4 backdrop-blur-sm">
+      <span className="font-mono text-[10.5px] tracking-[0.15em] text-ink-dim uppercase">
+        {FULL_WEEKDAY[weekday] ?? weekday}
+      </span>
+      <span className="text-ink-fringe">·</span>
+      <span className="font-mono text-[10.5px] text-ink-faint">{date}</span>
+    </div>
+  )
+}
 
 function DayTab({
   weekday,
@@ -100,19 +126,55 @@ export function ScheduleView() {
   const model = useSchedule()
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const uids = useMemo(() => model.rows.map((r) => r.uid), [model.rows])
+  // The All view interleaves a sticky day divider before each day's first row;
+  // a single day needs none (the day rail already names it). Rows stay sorted
+  // by start, so grouping consecutive rows by their computed day is clean.
+  const isAll = model.activeDay === ALL_DAYS
+  const items = useMemo<ScheduleListItem[]>(
+    () =>
+      isAll
+        ? withDayHeaders(model.rows, model.dayByUid)
+        : model.rows.map((row) => ({ kind: 'row', row })),
+    [isAll, model.rows, model.dayByUid],
+  )
+
+  // One key per virtual index — a uid for rows, a day sentinel for headers.
+  // Doubles as the anchor key set (useUidAnchor just does indexOf on strings).
+  const itemKeys = useMemo(
+    () => items.map((it) => (it.kind === 'header' ? `hdr:${it.day}` : it.row.uid)),
+    [items],
+  )
+  const stickyIndexes = useMemo(
+    () =>
+      items.reduce<number[]>((acc, it, i) => {
+        if (it.kind === 'header') acc.push(i)
+        return acc
+      }, []),
+    [items],
+  )
+  const activeStickyRef = useRef(-1)
 
   const virtualizer = useVirtualizer({
-    count: model.rows.length,
+    count: items.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: (index) => (items[index]?.kind === 'header' ? HEADER_HEIGHT : ROW_HEIGHT),
     overscan: 12,
-    // Identity is UID everywhere, including here — keying by index would make
-    // every row a different row the moment the filtered array changes length.
-    getItemKey: (index) => uids[index] ?? index,
+    getItemKey: (index) => itemKeys[index] ?? index,
+    // Keep the day header for the current section rendered even when it has
+    // scrolled above the window, so it can pin to the top (the Contacts effect).
+    rangeExtractor: useCallback(
+      (range: Range) => {
+        const active = [...stickyIndexes].reverse().find((i) => range.startIndex >= i) ?? -1
+        activeStickyRef.current = active
+        const next = new Set(defaultRangeExtractor(range))
+        if (active >= 0) next.add(active)
+        return [...next].sort((a, b) => a - b)
+      },
+      [stickyIndexes],
+    ),
   })
 
-  useUidAnchor(virtualizer, uids, model.activeDay)
+  useUidAnchor(virtualizer, itemKeys, model.activeDay)
 
   const empty = model.rows.length === 0 && model.ambient.length === 0 && model.ghosts.length === 0
 
@@ -159,28 +221,38 @@ export function ScheduleView() {
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
               <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
                 {virtualizer.getVirtualItems().map((item) => {
-                  const row = model.rows[item.index]
-                  if (!row) return null
-                  return (
-                    <div
-                      key={item.key}
-                      style={{
+                  const entry = items[item.index]
+                  if (!entry) return null
+                  // The active section header pins to the top with position:
+                  // sticky; everything else is absolutely placed at its offset.
+                  const pinned = entry.kind === 'header' && activeStickyRef.current === item.index
+                  const style = pinned
+                    ? ({ position: 'sticky', top: 0, left: 0, width: '100%', zIndex: 1 } as const)
+                    : ({
                         position: 'absolute',
                         top: 0,
                         left: 0,
                         width: '100%',
                         transform: `translateY(${item.start}px)`,
-                      }}
-                    >
-                      <EventRow
-                        row={row}
-                        selected={spine.selectedUid === row.uid}
-                        onSelect={() =>
-                          spine.setSelectedUid(spine.selectedUid === row.uid ? null : row.uid)
-                        }
-                        onToggleStar={() => void spine.toggleStar(row.event)}
-                        onAcknowledge={() => void spine.acknowledge([row.uid])}
-                      />
+                        ...(entry.kind === 'header' ? { zIndex: 1 } : {}),
+                      } as const)
+                  return (
+                    <div key={item.key} style={style}>
+                      {entry.kind === 'header' ? (
+                        <DayHeader day={entry.day} />
+                      ) : (
+                        <EventRow
+                          row={entry.row}
+                          selected={spine.selectedUid === entry.row.uid}
+                          onSelect={() =>
+                            spine.setSelectedUid(
+                              spine.selectedUid === entry.row.uid ? null : entry.row.uid,
+                            )
+                          }
+                          onToggleStar={() => void spine.toggleStar(entry.row.event)}
+                          onAcknowledge={() => void spine.acknowledge([entry.row.uid])}
+                        />
+                      )}
                     </div>
                   )
                 })}

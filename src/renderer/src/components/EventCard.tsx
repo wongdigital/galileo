@@ -252,7 +252,7 @@ export function EventCard({ uid, onDismiss }: EventCardProps) {
           <StarButton starred muted onToggle={() => void removeStar(uid)} label={star.title} />
         </div>
         <div className="mt-1 flex shrink-0 items-center gap-2 text-[11.5px] text-ink-faint">
-          <span className="font-mono">{formatTime(star.start)}</span>
+          <span className="font-mono">{whenLabel(star.start)}</span>
           <span className="text-ink-fringe">·</span>
           <span className="truncate">{star.room || 'Room TBA'}</span>
         </div>
@@ -315,7 +315,9 @@ export function EventCard({ uid, onDismiss }: EventCardProps) {
       </div>
 
       <div className="mt-1 flex shrink-0 flex-wrap items-center gap-2 text-[11.5px] text-ink-faint">
-        <span className={`font-mono ${cancelled ? 'text-cancelled/70' : 'text-ink-dim'}`}>{row.time}</span>
+        <span className={`font-mono ${cancelled ? 'text-cancelled/70' : 'text-ink-dim'}`}>
+          {whenLabel(event.start)}
+        </span>
         <span className="text-ink-fringe">·</span>
         <span className="truncate">{event.room || 'Room TBA'}</span>
         {row.states.map((state) => (
