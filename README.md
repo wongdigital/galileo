@@ -8,7 +8,7 @@ Chart your course through San Diego Comic-Con. Galileo is a desktop planner for 
 
 Galileo is a macOS app for **Apple Silicon** (M-series). Download the latest `.dmg` from [Releases](https://github.com/wongdigital/galileo/releases), open it, and drag Galileo to Applications.
 
-The build is **unsigned**, so Gatekeeper refuses it on a double-click. The first time, right-click the app → **Open** → **Open**; it launches normally after that. (Code signing and notarization are a later step.)
+The app is signed with a Developer ID and notarized by Apple, so it opens normally—no Gatekeeper workaround needed.
 
 On first launch the app fetches the current schedule from Sched—give it a moment on a cold start. Everything except the chat concierge works with no account and no key; the concierge is optional and brings your own key ([below](#the-chat-concierge-bring-your-own-key)).
 
@@ -45,7 +45,7 @@ npm run dist    # electron-vite build + electron-builder → dist/Galileo-<versi
 npm run pack    # unpacked .app in dist/ for a quick local check, no dmg
 ```
 
-Produces an unsigned Apple Silicon build. Signing needs a Developer ID identity and is not wired up.
+Produces an Apple Silicon build. Signing and notarization are opt-in: with no Apple credentials in the environment the output is unsigned (ad-hoc), which is fine for local use. For a release, install a "Developer ID Application" cert in the keychain and export `APPLE_API_KEY` (path to an App Store Connect API `.p8`), `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`; the same `npm run dist` then signs and notarizes.
 
 ## Data pipeline
 
