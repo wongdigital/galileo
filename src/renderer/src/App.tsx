@@ -51,6 +51,66 @@ function ViewToggle() {
   )
 }
 
+/**
+ * Starred events → .ics, one click. The same main-process pipeline the chat
+ * concierge's action card confirms into — this button is the no-API-key path
+ * to it, which is why it lives in the titlebar rather than behind chat.
+ * Success and cancel need no readout (the OS save dialog is the feedback);
+ * a failed write marks the button until the next attempt.
+ */
+function ExportButton() {
+  const { stars } = useSpine()
+  const [failed, setFailed] = useState(false)
+  const none = stars.length === 0
+  const label = none
+    ? 'Star events to export them to calendar'
+    : failed
+      ? 'Export failed—try again'
+      : `Export ${stars.length.toLocaleString()} starred event${stars.length === 1 ? '' : 's'} to calendar (.ics)`
+
+  const exportStarred = async (): Promise<void> => {
+    const api = typeof window !== 'undefined' ? window.api : null
+    if (!api) return
+    const result = (await api.export.ics({ uids: stars.map((s) => s.uid) })) as {
+      status?: string
+    } | null
+    setFailed(result?.status === 'failed')
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={none}
+      onClick={() => void exportStarred()}
+      aria-label={label}
+      title={label}
+      className="titlebar-no-drag relative flex h-8 w-8 items-center justify-center rounded-lg border border-line text-ink-dim transition-colors duration-150 hover:border-line-strong hover:text-ink disabled:opacity-40 disabled:hover:border-line disabled:hover:text-ink-dim"
+    >
+      {/* Arrow into a tray — export as macOS draws it, rotated toward disk. */}
+      <svg
+        viewBox="0 0 16 16"
+        className="h-4 w-4"
+        aria-hidden="true"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M8 2.2v7.2" />
+        <path d="M5.2 6.6 8 9.4l2.8-2.8" />
+        <path d="M2.6 10.8v1.7a1.3 1.3 0 0 0 1.3 1.3h8.2a1.3 1.3 0 0 0 1.3-1.3v-1.7" />
+      </svg>
+      {failed ? (
+        <span
+          aria-hidden="true"
+          className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-cancelled shadow-[0_0_6px_var(--color-cancelled)]"
+        />
+      ) : null}
+    </button>
+  )
+}
+
 function ThemeToggle() {
   const { theme, setTheme } = useTheme()
   const dark = theme === 'dark'
@@ -186,6 +246,7 @@ function Shell() {
           Galileo
         </span>
         <div className="flex items-center gap-2">
+          <ExportButton />
           <ThemeToggle />
           <ViewToggle />
         </div>

@@ -329,6 +329,28 @@ describe('starring', () => {
   })
 })
 
+describe('the titlebar export button', () => {
+  it('is disabled until something is starred — no empty .ics files', async () => {
+    await mount()
+    const button = screen.getByRole('button', { name: /Star events to export/ })
+    expect((button as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('exports the starred set through the bridge', async () => {
+    await mount()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Star Drawing Monsters/ }))
+    })
+    const ics = (window.api as unknown as { export: { ics: ReturnType<typeof vi.fn> } }).export.ics
+    ics.mockResolvedValue({ status: 'saved', count: 1 })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Export 1 starred event to calendar/ }))
+    })
+    expect(ics).toHaveBeenCalledWith({ uids: ['horror-sat'] })
+  })
+})
+
 describe('ghost stars', () => {
   it('renders a starred event that left the feed instead of dropping it', async () => {
     await mount()
