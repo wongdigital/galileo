@@ -1,5 +1,80 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { communityHue, withAlpha } from '../paint'
+import { communityHue, paintMapLabels, withAlpha, type LabelCandidate } from '../paint'
+
+/** The label pass needs only text metrics and fill calls — a plain object
+ *  stands in for the 2D context jsdom does not implement. */
+function fakeCtx(): CanvasRenderingContext2D & { drawn: string[] } {
+  const ctx = {
+    drawn: [] as string[],
+    font: '',
+    textAlign: '',
+    textBaseline: '',
+    fillStyle: '',
+    save(): void {},
+    restore(): void {},
+    measureText: (text: string) => ({ width: text.length * 6 }),
+    fillText(text: string): void {
+      this.drawn.push(text)
+    },
+  }
+  return ctx as unknown as CanvasRenderingContext2D & { drawn: string[] }
+}
+
+const hub = (over: Partial<Extract<LabelCandidate, { kind: 'hub' }>>): LabelCandidate => ({
+  kind: 'hub',
+  x: 0,
+  y: 0,
+  r: 10,
+  label: 'Hub',
+  degree: 100,
+  pinned: false,
+  ...over,
+})
+
+describe('paintMapLabels', () => {
+  it('skips a label whose rectangle collides with a louder one', () => {
+    const ctx = fakeCtx()
+    paintMapLabels(
+      [
+        hub({ label: 'Quiet', degree: 5, x: 4 }),
+        hub({ label: 'Loud', degree: 500, x: 0 }),
+      ],
+      ctx,
+      10,
+    )
+    expect(ctx.drawn).toEqual(['Loud'])
+  })
+
+  it('draws both when they are apart', () => {
+    const ctx = fakeCtx()
+    paintMapLabels(
+      [hub({ label: 'West', x: -500 }), hub({ label: 'East', x: 500 })],
+      ctx,
+      10,
+    )
+    expect(ctx.drawn.sort()).toEqual(['East', 'West'])
+  })
+
+  it('the pinned title always paints, and paints first', () => {
+    const ctx = fakeCtx()
+    paintMapLabels(
+      [
+        hub({ label: 'Loud', degree: 500 }),
+        { kind: 'event', x: 2, y: 2, r: 2.4, title: 'Pinned Panel' },
+      ],
+      ctx,
+      10,
+    )
+    expect(ctx.drawn[0]).toBe('Pinned Panel')
+  })
+
+  it('holds sub-threshold hub labels back until the zoom earns them', () => {
+    const ctx = fakeCtx()
+    paintMapLabels([hub({ label: 'Tiny', degree: 1 })], ctx, 0.5)
+    expect(ctx.drawn).toEqual([])
+  })
+})
 
 describe('communityHue', () => {
   it('is a pure function of the hub id — the colour survives restarts and reshuffles', () => {

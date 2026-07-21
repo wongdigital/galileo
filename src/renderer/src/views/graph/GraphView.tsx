@@ -61,7 +61,7 @@ import {
 } from '@shared/graph'
 import { LENS_LABEL, LensSelector } from './LensSelector'
 import { MiniMap } from './MiniMap'
-import { linkColor, linkWidth, nodeRadius, paintMapNode } from './paint'
+import { linkColor, linkWidth, nodeRadius, paintMapLabels, paintMapNode, type LabelCandidate } from './paint'
 import { useTheme } from '@renderer/state/theme'
 import { useNodeCache, type GraphLinkObject, type GraphNodeObject } from './useNodeCache'
 
@@ -399,7 +399,7 @@ export function GraphView() {
   }, [nodeCount, canvasMounted])
 
   const paint = useCallback(
-    (node: GraphNodeObject, ctx: CanvasRenderingContext2D, scale: number) => {
+    (node: GraphNodeObject, ctx: CanvasRenderingContext2D) => {
       const dimmed = lit ? !lit.has(node.id) : false
       const pinned = node.id === pinnedNodeId
       const model = node.model
@@ -416,7 +416,6 @@ export function GraphView() {
             dimmed,
           },
           ctx,
-          scale,
         )
       } else {
         paintMapNode(
@@ -432,7 +431,6 @@ export function GraphView() {
             dimmed,
           },
           ctx,
-          scale,
         )
       }
     },
@@ -442,6 +440,43 @@ export function GraphView() {
     // switch leaves the settled graph painted in the old palette until the
     // next pan or hover.
     [lit, pinnedNodeId, theme],
+  )
+
+  /**
+   * The label pass — every frame, after all marks, one collision-culled pass
+   * (see paintMapLabels). Dimmed nodes contribute no candidate: their names
+   * receding with them is the existing dimming contract.
+   */
+  const paintLabels = useCallback(
+    (ctx: CanvasRenderingContext2D, scale: number) => {
+      const candidates: LabelCandidate[] = []
+      for (const node of nodes) {
+        if (node.x === undefined || node.y === undefined) continue
+        if (lit && !lit.has(node.id)) continue
+        const model = node.model
+        if (model.kind === 'entity') {
+          candidates.push({
+            kind: 'hub',
+            x: node.x,
+            y: node.y,
+            r: nodeRadius(model),
+            label: entityLabel(model.entity),
+            degree: model.degree,
+            pinned: node.id === pinnedNodeId,
+          })
+        } else if (node.id === pinnedNodeId) {
+          candidates.push({
+            kind: 'event',
+            x: node.x,
+            y: node.y,
+            r: nodeRadius(model),
+            title: model.title,
+          })
+        }
+      }
+      paintMapLabels(candidates, ctx, scale)
+    },
+    [nodes, lit, pinnedNodeId],
   )
 
   const nodeTooltip = useCallback((node: GraphNodeObject) => {
@@ -567,6 +602,7 @@ export function GraphView() {
             linkWidth={(link) =>
               linkWidth(lit ? lit.has(idOf(link.source)) && lit.has(idOf(link.target)) : false)
             }
+            onRenderFramePost={paintLabels}
             onNodeHover={(node) => setHovered(node?.id ?? null)}
             onNodeClick={onNodeClick}
             onBackgroundClick={dismiss}

@@ -213,11 +213,7 @@ function hubLabelZoom(degree: number): number {
 }
 
 
-export function paintMapNode(
-  node: PaintMapNode,
-  ctx: CanvasRenderingContext2D,
-  scale: number,
-): void {
+export function paintMapNode(node: PaintMapNode, ctx: CanvasRenderingContext2D): void {
   const { x, y } = node
   if (x === undefined || y === undefined) return
   const colors = palette()
@@ -226,8 +222,8 @@ export function paintMapNode(
   ctx.save()
   ctx.globalAlpha = node.dimmed ? DIM_ALPHA : 1
 
-  if (node.kind === 'entity') paintHub(node, ctx, scale, r, colors)
-  else paintEvent(node, ctx, scale, r, colors)
+  if (node.kind === 'entity') paintHub(node, ctx, r, colors)
+  else paintEvent(node, ctx, r, colors)
 
   ctx.restore()
 }
@@ -235,7 +231,6 @@ export function paintMapNode(
 function paintHub(
   node: PaintHubNode,
   ctx: CanvasRenderingContext2D,
-  scale: number,
   r: number,
   colors: Palette,
 ): void {
@@ -276,20 +271,11 @@ function paintHub(
     ctx.setLineDash([])
   }
 
-  if (node.dimmed || scale < hubLabelZoom(node.degree)) return
-
-  const size = Math.max(8.5, (9 + Math.sqrt(node.degree)) / scale)
-  ctx.font = `${size}px ${LABEL_FONT}`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'top'
-  ctx.fillStyle = colors.ink
-  ctx.fillText(truncate(node.label, 34), x, y + r + 3)
 }
 
 function paintEvent(
   node: PaintEventNode,
   ctx: CanvasRenderingContext2D,
-  scale: number,
   r: number,
   colors: Palette,
 ): void {
@@ -352,17 +338,87 @@ function paintEvent(
   } else if (node.states.includes('new')) {
     changeDot(ctx, x + r + 2, y - r - 2, colors.new)
   }
+}
 
-  // Only the pinned dot is titled — see the header. `dimmed` still wins: a
-  // pinned event under someone else's hover preview recedes whole.
-  if (node.dimmed || !node.pinned) return
+/**
+ * ## The label pass (U9)
+ *
+ * Labels do not paint with their nodes. They paint once per frame, after every
+ * mark, in a single pass that owns a collision registry — because a label's
+ * one failure mode is another label, and nodes painting blind to each other is
+ * how the zoomed-out map became a fog of overprinted names.
+ *
+ * Priority is legibility's order, not paint order: the pinned title first (it
+ * anchors an open card and must never lose its name), then hubs loudest-first,
+ * so when space runs out it is the small hubs that go quiet. A candidate whose
+ * rectangle intersects any claimed rectangle is skipped whole — a name is
+ * either readable or absent, never a layered smear. Zooming in shrinks label
+ * rectangles in graph space, so the skipped names surface as room appears;
+ * R12's continuous-legibility rule keeps working, this pass just adds "and
+ * never on top of each other".
+ */
+export type LabelCandidate =
+  | { kind: 'hub'; x: number; y: number; r: number; label: string; degree: number; pinned: boolean }
+  /** Only the pinned dot ever titles — see the header. */
+  | { kind: 'event'; x: number; y: number; r: number; title: string }
 
-  const size = Math.max(8, 10 / scale)
-  ctx.font = `${size}px ${LABEL_FONT}`
+interface Rect {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+const overlaps = (a: Rect, b: Rect): boolean =>
+  a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1
+
+export function paintMapLabels(
+  candidates: readonly LabelCandidate[],
+  ctx: CanvasRenderingContext2D,
+  scale: number,
+): void {
+  const colors = palette()
+  const ordered = [...candidates].sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === 'event' ? -1 : 1
+    if (a.kind === 'hub' && b.kind === 'hub') {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+      return b.degree - a.degree
+    }
+    return 0
+  })
+
+  const claimed: Rect[] = []
+  ctx.save()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  ctx.fillStyle = colors.fringe
-  ctx.fillText(truncate(node.title, 26), x, y + r + 3)
+
+  for (const c of ordered) {
+    const hub = c.kind === 'hub'
+    // The pinned hub bypasses the zoom threshold: its card is open, and a card
+    // pointing at an unnamed dot reads as a broken pointer.
+    if (hub && !c.pinned && scale < hubLabelZoom(c.degree)) continue
+
+    const size = hub ? Math.max(8.5, (9 + Math.sqrt(c.degree)) / scale) : Math.max(8, 10 / scale)
+    ctx.font = `${size}px ${LABEL_FONT}`
+    const text = truncate(hub ? c.label : c.title, hub ? 34 : 26)
+    const width = ctx.measureText(text).width
+    const top = c.y + c.r + 3
+    // Breathing room so two names that merely touch still refuse to kiss.
+    const rect: Rect = {
+      x1: c.x - width / 2 - size * 0.3,
+      y1: top - size * 0.15,
+      x2: c.x + width / 2 + size * 0.3,
+      y2: top + size * 1.15,
+    }
+    const anchored = !hub || c.pinned
+    if (!anchored && claimed.some((taken) => overlaps(rect, taken))) continue
+
+    claimed.push(rect)
+    ctx.fillStyle = hub ? colors.ink : colors.fringe
+    ctx.fillText(text, c.x, top)
+  }
+
+  ctx.restore()
 }
 
 function changeDot(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
