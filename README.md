@@ -49,6 +49,10 @@ Panels and screenings export with a 15-minute alarm. All-day and drop-in blocks 
 
 Times carry `TZID=America/Los_Angeles` on each event. Apple Calendar is the target; Google Calendar ignores imported alarms.
 
+## Why I built this
+
+With over 3,000 events across 5 days and 51 rooms at various venues, the Comic-Con schedule is a monster. Unfortunately, the official schedule is hard to use and navigate. So I built my own. Hope you like it. Reach out to me (hello@rogerwong.me) with questions or file an issue.
+
 ---
 
 ## For developers
