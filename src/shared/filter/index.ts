@@ -7,3 +7,4 @@
 export * from './types'
 export * from './engine'
 export * from './candidate'
+export * from './labels'

@@ -15,6 +15,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { applyFilter, describeFilter, facetOptions } from '../../shared/filter/engine'
+import { facetValueLabel } from '../../shared/filter/labels'
 import { EMPTY_FILTER, type FilterCandidate, type FilterChip, type FilterState, type MatchContext } from '../../shared/filter/types'
 import { applyFilterIntent, resolveFacetValue } from '../../shared/chat'
 import type { AppStatePatch, EventSummary, ProposedAction, ViewName } from '../../shared/chat'
@@ -158,7 +159,17 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
         const sample = matched.slice(0, 6).flatMap((c) => {
           const row = toolRow(c.uid)
           return row
-            ? [{ uid: row.uid, title: row.title, when: row.when, room: row.room, genres: c.dimensions.genre ?? [], franchises: c.dimensions.ip ?? [] }]
+            ? [{
+                uid: row.uid,
+                title: row.title,
+                when: row.when,
+                room: row.room,
+                // Human names, not machine ids — whatever appears here is what
+                // the model will quote in prose, and the user should never
+                // read "star-wars-lego".
+                genres: (c.dimensions.genre ?? []).map((v) => facetValueLabel('genre', v)),
+                franchises: (c.dimensions.ip ?? []).map((v) => facetValueLabel('ip', v)),
+              }]
             : []
         })
         // The events the model will name in its reply — make them linkable.
@@ -208,7 +219,16 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
           0,
           limit ?? 25,
         )
-        return { dimension, values: options.map((o) => ({ value: o.value, count: o.count })) }
+        return {
+          dimension,
+          // `label` is the human name to use in prose; `value` is the token a
+          // chip carries (though resolution accepts either form).
+          values: options.map((o) => ({
+            value: o.value,
+            label: facetValueLabel(dimension, o.value),
+            count: o.count,
+          })),
+        }
       },
     }),
 
@@ -253,7 +273,7 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
           track: event.track,
           description: event.description,
           people: candidate?.dimensions.person ?? [],
-          franchises: candidate?.dimensions.ip ?? [],
+          franchises: (candidate?.dimensions.ip ?? []).map((v) => facetValueLabel('ip', v)),
           starred: ctx.matchContext.isStarred(uid),
         }
       },

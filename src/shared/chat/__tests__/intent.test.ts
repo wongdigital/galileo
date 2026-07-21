@@ -112,4 +112,23 @@ describe('resolveFacetValue', () => {
     // "Star Trek" is exact even though "star" alone would be ambiguous.
     expect(resolveFacetValue('Star Trek', values)).toBe('Star Trek')
   })
+
+  it('matches a spoken name against a canonical slug, and back', () => {
+    // The enrichment index stores franchise ids as slugs; the model speaks in
+    // names. Separators must not defeat the match in either direction.
+    const slugs = ['star-wars', 'star-wars-lego', 'the-walking-dead']
+    expect(resolveFacetValue('Star Wars', slugs)).toBe('star-wars')
+    expect(resolveFacetValue('star wars lego', slugs)).toBe('star-wars-lego')
+    expect(resolveFacetValue('the walking dead', values)).toBe('The Walking Dead')
+  })
+
+  it('resolves a unique substring across separator styles', () => {
+    expect(resolveFacetValue('lego', ['star-wars', 'star-wars-lego'])).toBe('star-wars-lego')
+  })
+
+  it('keeps word boundaries when normalizing, so fragments cannot bridge words', () => {
+    // Collapsing separators to nothing would put "art" inside "startrek";
+    // collapsing to a space keeps it out.
+    expect(resolveFacetValue('art', ['star-trek', 'art-illustration'])).toBe('art-illustration')
+  })
 })

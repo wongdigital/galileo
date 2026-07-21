@@ -90,10 +90,13 @@ const DESC: Record<string, string> = {
   e4: 'A late-night horror showcase.',
 }
 
+// `ip` values are canonical slugs, exactly as the enrichment index stores them
+// in production — so these evals exercise the spoken-name → slug resolution
+// ("Star Wars" must land on 'star-wars') the real corpus demands.
 const CANDIDATES: FilterCandidate[] = [
-  { uid: 'e1', dimensions: { genre: ['Horror'], ip: ['Star Wars'], person: ['Ada Vance'], venue: ['Convention Center'], room: [ROOM.e1!] }, haystack: 'e1 star wars a retrospective horror ada vance thursday room 6a' },
-  { uid: 'e2', dimensions: { genre: ['Comedy'], ip: ['Star Wars'], venue: ['Marriott Marquis'], room: [ROOM.e2!] }, haystack: 'e2 comedy legends of the galaxy star wars friday marriott' },
-  { uid: 'e3', dimensions: { ip: ['Marvel'], person: ['Bo Idris'], venue: ['Convention Center'], room: [ROOM.e3!] }, haystack: 'e3 marvel studios hall h presentation saturday bo idris' },
+  { uid: 'e1', dimensions: { genre: ['Horror'], ip: ['star-wars'], person: ['Ada Vance'], venue: ['Convention Center'], room: [ROOM.e1!] }, haystack: 'e1 star wars a retrospective horror ada vance thursday room 6a' },
+  { uid: 'e2', dimensions: { genre: ['Comedy'], ip: ['star-wars'], venue: ['Marriott Marquis'], room: [ROOM.e2!] }, haystack: 'e2 comedy legends of the galaxy star wars friday marriott' },
+  { uid: 'e3', dimensions: { ip: ['marvel'], person: ['Bo Idris'], venue: ['Convention Center'], room: [ROOM.e3!] }, haystack: 'e3 marvel studios hall h presentation saturday bo idris' },
   { uid: 'e4', dimensions: { genre: ['Horror'], venue: ['Convention Center'], room: [ROOM.e4!] }, haystack: 'e4 night terrors after dark horror sunday' },
 ]
 const EVENTS: ScheduleEvent[] = CANDIDATES.map((c) => ({
@@ -140,13 +143,19 @@ const JUDGE_MODEL = process.env.LIVE_JUDGE_MODEL || 'claude-fable-5'
 
 function parseVerdict(text: string): { pass: boolean; reason: string } {
   const match = text.match(/\{[\s\S]*\}/)
-  if (!match) return { pass: false, reason: `unparseable judge output: ${text.slice(0, 200)}` }
-  try {
-    const obj = JSON.parse(match[0]) as { pass?: unknown; reason?: unknown }
-    return { pass: Boolean(obj.pass), reason: String(obj.reason ?? '') }
-  } catch {
-    return { pass: false, reason: `bad judge JSON: ${text.slice(0, 200)}` }
+  if (match) {
+    try {
+      const obj = JSON.parse(match[0]) as { pass?: unknown; reason?: unknown }
+      return { pass: Boolean(obj.pass), reason: String(obj.reason ?? '') }
+    } catch {
+      // fall through to the salvage path below
+    }
   }
+  // A truncated reply can lose the closing brace while the verdict itself is
+  // perfectly clear — a judge that said pass must not be scored as a fail.
+  const pass = text.match(/"pass"\s*:\s*(true|false)/)
+  if (pass) return { pass: pass[1] === 'true', reason: `(reason truncated) ${text.slice(0, 200)}` }
+  return { pass: false, reason: `unparseable judge output: ${text.slice(0, 200)}` }
 }
 
 async function judgeContent(question: string, answer: string, toolTrace: string[]): Promise<{ pass: boolean; reason: string }> {
@@ -155,9 +164,9 @@ async function judgeContent(question: string, answer: string, toolTrace: string[
   const anthropic = createAnthropic({ apiKey: key })
   const args = {
     model: anthropic(JUDGE_MODEL),
-    maxOutputTokens: 3000,
+    maxOutputTokens: 4000,
     system:
-      'You grade a Comic-Con schedule concierge for GROUNDEDNESS and HELPFULNESS. It must never invent events, people, times, rooms, or counts beyond the dataset given. Saying "not found" when the data lacks something is CORRECT and helpful, not a failure. Reply with ONLY a JSON object: {"pass": boolean, "reason": string}. pass=true iff the answer invents nothing outside the dataset and is an honest, useful response to the question.',
+      'You grade a Comic-Con schedule concierge for GROUNDEDNESS and HELPFULNESS. It must never invent events, people, times, rooms, or counts beyond the dataset given. Saying "not found" when the data lacks something is CORRECT and helpful, not a failure. Reply with ONLY a JSON object: {"pass": boolean, "reason": string}. Keep reason to ONE short sentence. pass=true iff the answer invents nothing outside the dataset and is an honest, useful response to the question.',
     prompt: `DATASET GROUND TRUTH:\n${CORPUS_FACTS}\n\nUSER ASKED: ${question}\nTOOLS THE CONCIERGE CALLED: ${toolTrace.join(', ') || '(none)'}\nCONCIERGE ANSWERED: ${answer || '(empty)'}\n\nGrade it.`,
   }
   try {
@@ -207,6 +216,30 @@ for (const provider of ['anthropic', 'openai', 'openrouter'] as ProviderId[]) {
       await contentCase("I'm into horror and Star Wars", (trace) => {
         expect(trace).toContain('apply_filters')
       })
+    }, TIMEOUT)
+
+    it('lists a franchise’s programs with every named title linkable', async () => {
+      const question = 'what are all the star wars programs'
+      const res = await runChatTurn(deps, request(provider, question))
+      expect(res.ok).toBe(true)
+      if (!res.ok) return
+      const { message, toolTrace, eventUids } = res.turn
+      console.log(`[${provider}] "${question}"\n  tools: ${toolTrace.join(', ')}\n  uids: ${eventUids.join(', ')}\n  answer: ${message.content}`)
+      // Found through tools, with the spoken name resolving onto the 'star-wars'
+      // slug — not a full-corpus fallback, not a guess.
+      expect(toolTrace.some((t) => ['apply_filters', 'search_events'].includes(t))).toBe(true)
+      // Both Star Wars events must be in the linkable set…
+      expect(eventUids).toContain('e1')
+      expect(eventUids).toContain('e2')
+      // …and each named title must appear bolded verbatim, which is the whole
+      // linking contract: the renderer turns **exact-title** into the link. An
+      // answer that lists the programs unlinked is a regression, not a style.
+      for (const title of [TITLE.e1!, TITLE.e2!]) {
+        expect(message.content.toLowerCase()).toContain(`**${title.toLowerCase()}**`)
+      }
+      const verdict = await judgeContent(question, message.content, toolTrace)
+      console.log(`  JUDGE ${verdict.pass ? 'PASS' : 'FAIL'}: ${verdict.reason}`)
+      expect(verdict.pass, verdict.reason).toBe(true)
     }, TIMEOUT)
 
     it('discovers real franchise values rather than guessing', async () => {

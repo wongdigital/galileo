@@ -48,23 +48,37 @@ export function applyFilterIntent(current: FilterState, intent: FilterIntent): F
 }
 
 /**
+ * Lowercased with every run of punctuation and whitespace collapsed to one
+ * space, so casing and separator differences cannot defeat a match — "Star
+ * Wars" and the canonical slug "star-wars" normalize identically. Collapsed to
+ * a *space*, not to nothing: word boundaries have to survive, or the substring
+ * stage would let "art" match "Star Trek". Unicode-aware so "Pokémon" keeps
+ * its é rather than splitting on it.
+ */
+const normalize = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+
+/**
  * Map a value the model asked for to a real value present in the corpus for
- * that dimension. Exact case-insensitive match first — the model usually gets
- * the token right — then a *unique* substring match so "star wars" finds
- * "Star Wars" without a lookup round-trip. Two or more substring hits is
- * ambiguous and returns null rather than guessing; the caller reports it back
- * so the model can disambiguate or ask.
+ * that dimension. Exact match on the normalized form first — so "Star Wars"
+ * finds the slug "star-wars" directly — then a *unique* substring match so
+ * "lego" finds "star-wars-lego" without a lookup round-trip. Two or more
+ * substring hits is ambiguous and returns null rather than guessing; the
+ * caller reports it back so the model can disambiguate or ask.
  */
 export function resolveFacetValue(requested: string, available: readonly string[]): string | null {
-  const want = requested.trim().toLowerCase()
+  const want = normalize(requested)
   if (!want) return null
 
   for (const value of available) {
-    if (value.toLowerCase() === want) return value
+    if (normalize(value) === want) return value
   }
 
   const matches = available.filter((value) => {
-    const v = value.toLowerCase()
+    const v = normalize(value)
     return v.includes(want) || want.includes(v)
   })
   return matches.length === 1 ? matches[0]! : null

@@ -3,13 +3,16 @@ import { buildTools, type ToolContext, type TurnCapture } from '../tools'
 import { EMPTY_FILTER, type FilterCandidate, type MatchContext } from '../../../shared/filter/types'
 import type { ScheduleEvent } from '../../../shared/schedule'
 
+// `ip` values are canonical slugs, exactly as the enrichment index stores them —
+// the tools must resolve the model's spoken "Star Wars" onto them and label
+// them back to a human name on the way out.
 const candidates: FilterCandidate[] = [
   {
     uid: 'a',
-    dimensions: { genre: ['Horror'], ip: ['Star Wars'], person: ['Ada Vance', 'Bo Idris'] },
+    dimensions: { genre: ['Horror'], ip: ['star-wars'], person: ['Ada Vance', 'Bo Idris'] },
     haystack: 'panel a lucasfilm horror star wars',
   },
-  { uid: 'b', dimensions: { genre: ['Comedy'], ip: ['Star Wars'] }, haystack: 'panel b star wars comedy' },
+  { uid: 'b', dimensions: { genre: ['Comedy'], ip: ['star-wars'] }, haystack: 'panel b star wars comedy' },
   { uid: 'c', dimensions: { genre: ['Horror'] }, haystack: 'panel c horror' },
 ]
 
@@ -98,7 +101,8 @@ describe('apply_filters', () => {
     await run(tools.apply_filters, { add: [{ dimension: 'ip', value: 'star wars' }] })
     expect(capture.patch?.filter?.chips).toEqual([
       { dimension: 'genre', value: 'Horror' },
-      { dimension: 'ip', value: 'Star Wars' },
+      // The spoken name resolves onto the canonical slug the corpus carries.
+      { dimension: 'ip', value: 'star-wars' },
     ])
   })
 })
@@ -128,10 +132,11 @@ describe('set_view', () => {
 })
 
 describe('list_facet_values', () => {
-  it('returns the real values in a dimension with counts', async () => {
+  it('returns the real values in a dimension with counts and human labels', async () => {
     const { tools } = setup()
     const result = await run(tools.list_facet_values, { dimension: 'ip' })
-    expect(result.values).toEqual([{ value: 'Star Wars', count: 2 }])
+    // The slug is the chip token; the label is what the model should quote.
+    expect(result.values).toEqual([{ value: 'star-wars', label: 'Star Wars', count: 2 }])
   })
 })
 
@@ -166,6 +171,7 @@ describe('get_event', () => {
     expect(result.found).toBe(true)
     expect(result.description).toBe('Description for a')
     expect(result.people).toEqual(['Ada Vance', 'Bo Idris'])
+    // Labeled from the slug — the model quotes "Star Wars", never "star-wars".
     expect(result.franchises).toEqual(['Star Wars'])
     expect(result.starred).toBe(true)
     expect(capture.eventUids).toEqual(['a'])
