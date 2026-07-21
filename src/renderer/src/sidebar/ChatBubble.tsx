@@ -45,17 +45,30 @@ export function Bubble({
 
   // Title -> uid for the events this turn's tools returned, so the model's own
   // bolded event names become clickable in place (matching the user's mental
-  // model — the name in the sentence is the link).
+  // model — the name in the sentence is the link). A title shared by several
+  // uids is the same program's repeated sittings, so it links to the earliest
+  // one — whose card lists the rest under "Also runs" — rather than going
+  // inert, which read as "only some of these are links".
   const eventByTitle = useMemo(() => {
-    const map = new Map<string, string[]>()
+    const uidsByTitle = new Map<string, string[]>()
     for (const uid of entry.eventUids ?? []) {
       const event = byUid.get(uid)
       if (event) {
         const key = event.title.trim().toLowerCase()
-        const uids = map.get(key)
+        const uids = uidsByTitle.get(key)
         if (uids) uids.push(uid)
-        else map.set(key, [uid])
+        else uidsByTitle.set(key, [uid])
       }
+    }
+    const map = new Map<string, string>()
+    for (const [key, uids] of uidsByTitle) {
+      // '~' sorts after every ISO date, so a dateless sitting never wins over
+      // a scheduled one.
+      const startOf = (uid: string) => byUid.get(uid)?.start ?? '~'
+      map.set(
+        key,
+        uids.reduce((a, b) => (startOf(b) < startOf(a) ? b : a)),
+      )
     }
     return map
   }, [entry.eventUids, byUid])
@@ -98,24 +111,26 @@ export function Bubble({
               ),
               // A bolded event name we recognize becomes a link to its card.
               strong: ({ node: _node, children }) => {
-                // Only link when the title resolves to exactly one event — two
-                // same-titled events (a panel and its repeat) would send the
-                // click to whichever happened to be last, so leave those bold.
-                const uids = eventByTitle.get(nodeText(children).trim().toLowerCase())
-                const uid = uids?.length === 1 ? uids[0] : undefined
+                const uid = eventByTitle.get(nodeText(children).trim().toLowerCase())
                 return uid ? (
                   // White like the surrounding bold, with the link affordance
                   // held back to hover — a wall of blue in a list is noise.
-                  <button
-                    type="button"
+                  // A span with role="link", not a <button>: form controls are
+                  // atomic inline boxes that cannot fragment across lines, and
+                  // an atomic box's baseline is its *last* line — so a long
+                  // title wrapping inside a list item dragged the bullet down
+                  // to its final line. A span wraps like the text around it.
+                  <span
+                    role="link"
+                    tabIndex={0}
                     onClick={() => onOpen(uid)}
-                    // `inline` + `text-left`: a button defaults to inline-block
-                    // and text-align:center, so a title that wraps two lines
-                    // centers. Flow it like the surrounding text instead.
-                    className="inline cursor-pointer bg-transparent p-0 text-left align-baseline font-semibold text-ink-bright underline-offset-2 transition-all duration-150 hover:underline"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') onOpen(uid)
+                    }}
+                    className="cursor-pointer font-semibold text-ink-bright underline-offset-2 transition-all duration-150 hover:underline"
                   >
                     {children}
-                  </button>
+                  </span>
                 ) : (
                   <strong>{children}</strong>
                 )

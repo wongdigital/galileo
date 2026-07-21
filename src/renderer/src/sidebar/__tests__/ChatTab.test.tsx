@@ -262,8 +262,8 @@ describe('ChatTab', () => {
     await waitFor(() => expect(syncDataset).toHaveBeenCalled())
     await sendMessage('find the monsters panel')
 
-    // The bolded title is a button, not inert text, and clicking it selects the event.
-    const link = await screen.findByRole('button', { name: 'Drawing Monsters for a Living' })
+    // The bolded title is a link, not inert text, and clicking it selects the event.
+    const link = await screen.findByRole('link', { name: 'Drawing Monsters for a Living' })
     fireEvent.click(link)
     expect(screen.getByTestId('sel').textContent).toBe('horror-sat')
   })
@@ -438,9 +438,10 @@ describe('ChatTab', () => {
     await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('graph'))
   })
 
-  it('does not linkify a bold title two events share, but does when it is unique', async () => {
-    const DUP1 = event('dup-1', { title: 'Spotlight Panel' })
-    const DUP2 = event('dup-2', { title: 'Spotlight Panel' })
+  it('links a repeated title to its earliest sitting, and a unique title to its event', async () => {
+    // Same title, two sittings — dup-2 runs first, so the link must open it.
+    const DUP1 = event('dup-1', { title: 'Spotlight Panel', start: `${SAT}T14:00:00-07:00` })
+    const DUP2 = event('dup-2', { title: 'Spotlight Panel', start: `${SAT}T09:00:00-07:00` })
     const UNIQUE = event('unique-1', { title: 'Q&A: Where Do We Go? (Part 1)' })
     ;(window as unknown as { api: { schedule: { refresh: unknown } } }).api.schedule.refresh = vi
       .fn()
@@ -464,12 +465,14 @@ describe('ChatTab', () => {
 
     // The unique title resolves to a clickable link — markdown-special characters
     // (?, parens) and all — and clicking it selects the event.
-    const unique = await screen.findByRole('button', { name: 'Q&A: Where Do We Go? (Part 1)' })
+    const unique = await screen.findByRole('link', { name: 'Q&A: Where Do We Go? (Part 1)' })
     fireEvent.click(unique)
     expect(screen.getByTestId('sel').textContent).toBe('unique-1')
-    // The duplicated title stays bold text, never a button.
-    expect(screen.queryByRole('button', { name: 'Spotlight Panel' })).toBeNull()
-    expect(screen.getByText('Spotlight Panel')).toBeTruthy()
+    // The repeated title is a link too — to the earliest sitting, whose card
+    // lists the other one under "Also runs".
+    const repeated = screen.getByRole('link', { name: 'Spotlight Panel' })
+    fireEvent.click(repeated)
+    expect(screen.getByTestId('sel').textContent).toBe('dup-2')
   })
 
   it('keeps an export card actionable when the save dialog is cancelled', async () => {
