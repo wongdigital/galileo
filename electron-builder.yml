@@ -28,7 +28,6 @@ files:
   - '!docs'
   - '!tests'
   - '!data'
-  - '!build/icon.svg'
   - '!electron.vite.config.ts'
   - '!eslint.config.{js,cjs,mjs}'
   - '!tsconfig*.json'
