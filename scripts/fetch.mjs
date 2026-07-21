@@ -20,10 +20,11 @@ import { buildDataset } from '../src/shared/schedule/index.ts'
 
 const SITE = process.env.SCHED_SITE ?? 'https://comiccon2026.sched.com'
 const TZ = 'America/Los_Angeles'
-const UA = { 'User-Agent': 'galileo personal fetcher (roger@wong.digital)' }
+// Kept in step with src/main/fetchExecutor.ts — names the project and a contact.
+const UA = { 'User-Agent': 'Galileo (+https://github.com/wongdigital/galileo; roger@wong.digital)' }
 
 async function get(path) {
-  const res = await fetch(`${SITE}${path}`, { headers: UA })
+  const res = await fetch(`${SITE}${path}`, { headers: UA, signal: AbortSignal.timeout(15_000) })
   if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`)
   return res.text()
 }

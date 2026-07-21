@@ -1,8 +1,18 @@
 # Galileo
 
-A better way to browse the Comic-Con San Diego program schedule. Sched's site and app are painful; the underlying data is not.
+Chart your course through San Diego Comic-Con. Galileo is a desktop planner for the public program—fast filtering, a relatedness map across people and franchises, and calendar export to your phone.
 
 > **Unofficial.** This project is not affiliated with, endorsed by, or connected to San Diego Comic Convention (Comic-Con International) or Sched. Convention program data is fetched from Sched's public endpoints at runtime for personal use and is **never committed to this repository**—see `.gitignore`. The AGPL-3.0 license (see `LICENSE`) covers the code only, not convention data.
+
+## Install
+
+Galileo is a macOS app for **Apple Silicon** (M-series). Download the latest `.dmg` from [Releases](https://github.com/wongdigital/galileo/releases), open it, and drag Galileo to Applications.
+
+The build is **unsigned**, so Gatekeeper refuses it on a double-click. The first time, right-click the app → **Open** → **Open**; it launches normally after that. (Code signing and notarization are a later step.)
+
+On first launch the app fetches the current schedule from Sched—give it a moment on a cold start. Everything except the chat concierge works with no account and no key; the concierge is optional and brings your own key ([below](#the-chat-concierge-bring-your-own-key)).
+
+To build it yourself instead, see [Setup](#setup).
 
 ## The hybrid data model (read this before contributing)
 
@@ -27,6 +37,15 @@ npm run dev                             # launch the app
 ```
 
 Vite is pinned to `^7` and `@vitejs/plugin-react` to `^5`: electron-vite 5 peers Vite ≤7, while current defaults resolve Vite 8.
+
+### Building a macOS app
+
+```sh
+npm run dist    # electron-vite build + electron-builder → dist/Galileo-<version>-arm64.dmg (+ .zip)
+npm run pack    # unpacked .app in dist/ for a quick local check, no dmg
+```
+
+Produces an unsigned Apple Silicon build. Signing needs a Developer ID identity and is not wired up.
 
 ## Data pipeline
 
@@ -91,6 +110,12 @@ It replaced an ego-network model that drew events only and connected two events 
 Two rules keep the picture readable. An entity needs at least two in-scope events to be drawn at all — a franchise covering one event adds a dot and a line that say nothing the event's own label does not. And events no hub claims are never hidden; a weak radial force gathers them into a dim halo at the rim, where they stay hoverable like everything else.
 
 Clicking a hub or a dot pins it and opens a card. Event cards are shared with the 5-day list, so the same click opens the same card in either view, and star and change encodings are read from one place — a starred, moved event looks the same as a row, as a dot, and on the card.
+
+## The chat concierge (bring your own key)
+
+The Chat tab is an optional natural-language way to search, filter, and plan—"show me horror on Saturday", "who's on the Marvel panel", "star the Lucasfilm panel". It stays off until you add your own API key; browse, filter, map, and export need no key and no account.
+
+Add a key in the Chat tab. Galileo works with Anthropic, OpenAI, or OpenRouter—you only need one. The key is encrypted at rest through the OS keychain (Electron `safeStorage`) and lives only in the main process: it never crosses into the renderer, and it never leaves your machine except in requests to the provider you picked.
 
 ## Exporting to your phone
 

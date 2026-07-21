@@ -87,6 +87,16 @@
   --spacing-rail: 52px;
 }
 
+/* Dark by default, regardless of the OS appearance setting. Without this,
+   native UA surfaces — scrollbars, the <select> popup, form fields, text
+   carets — follow the system, so a light-mode Mac would paint light widgets
+   onto the dark instrument. It flips to light only when the user picks the
+   daylight theme below. The token default (state/theme.ts) is already dark;
+   this makes the OS agree. */
+:root {
+  color-scheme: dark;
+}
+
 /* Daylight theme — the same instrument in a lit room. Token roles are
    unchanged (950 backmost … 700 raised thumb; ink runs bright→faint), only
    their values flip, so every utility and the canvas painter follow without
@@ -94,6 +104,7 @@
    ink-dim ≥7:1 (density exception), lumen ≥4.5:1 as text and ≥3:1 as the
    focus ring, lumen-dim ≥3:1 as a border. */
 :root[data-theme='light'] {
+  color-scheme: light;
   --color-ground-950: #f6f8fb;
   --color-ground-900: #eef1f6;
   --color-ground-850: #ffffff;

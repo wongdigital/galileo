@@ -5,10 +5,21 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "description": "Galileo — a better San Diego Comic-Con schedule app",
+  "author": {
+    "name": "Roger Wong",
+    "url": "https://rogerwong.me"
+  },
+  "homepage": "https://github.com/wongdigital/galileo#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wongdigital/galileo.git"
+  },
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "dist": "electron-vite build && electron-builder --mac",
+    "pack": "electron-vite build && electron-builder --mac --dir",
     "start": "electron-vite preview",
     "typecheck": "tsc --build --force",
     "test": "vitest run",
