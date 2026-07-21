@@ -6,15 +6,48 @@ Chart your course through San Diego Comic-Con. Galileo is a desktop planner for 
 
 ## Install
 
-Galileo is a macOS app for **Apple Silicon** (M-series). Download the latest `.dmg` from [Releases](https://github.com/wongdigital/galileo/releases), open it, and drag Galileo to Applications.
+Download the latest release for your platform from [Releases](https://github.com/wongdigital/galileo/releases):
 
-The app is signed with a Developer ID and notarized by Apple, so it opens normally—no Gatekeeper workaround needed.
+- **macOS** (Apple Silicon, M-series) — open the `.dmg` and drag Galileo to your Applications folder.
+- **Windows** — run the `.exe` installer. On first launch Windows may show a SmartScreen prompt; choose **More info → Run anyway**.
 
 On first launch the app fetches the current schedule from Sched—give it a moment on a cold start. Everything except the chat concierge works with no account and no key; the concierge is optional and brings your own key ([below](#the-chat-concierge-bring-your-own-key)).
 
-To build it yourself instead, see [Setup](#setup).
+Want to build it yourself instead? See [For developers](#for-developers).
 
-## The hybrid data model (read this before contributing)
+## What you can do
+
+### Browse and filter
+
+The main view is a five-day list of the whole public program. Filter by track, day, room, and sub-category to cut thousands of events down to the handful you care about, and star the ones you want to keep. Stars and filters persist between launches.
+
+### The relatedness map
+
+The second view is a map that connects the schedule by who and what is in it. **Entities**—a person, a franchise, a genre—are hubs sized by how many events they cover; **events** are dots; and a line joins each event to each entity it carries. A lens picks which kind of entity is drawn, and the map only ever shows what your current filter holds, so narrowing the list narrows the map.
+
+Click a hub or a dot to pin it and open a card. It's the same card the list shows, so a starred, moved event looks identical whether you meet it as a row, as a dot, or on the map. Events no hub claims aren't hidden—they drift into a dim halo at the rim, still hoverable.
+
+An event that repeats shows its other sittings as "Also runs" on its card.
+
+### The chat concierge (bring your own key)
+
+The Chat tab is an optional natural-language way to search, filter, and plan—"show me horror on Saturday", "who's on the Marvel panel", "star the Lucasfilm panel". It stays off until you add your own API key; browse, filter, map, and export need no key and no account.
+
+Add a key in the Chat tab. Galileo works with Anthropic, OpenAI, or OpenRouter—you only need one. The key is encrypted at rest through the OS keychain (Electron `safeStorage`) and lives only in the main process: it never crosses into the renderer, and it never leaves your machine except in requests to the provider you picked.
+
+### Export to your phone
+
+Export starred sessions for a single day or the whole con. Import the generated `.ics` into a **dedicated calendar**, not your main one. To refresh after schedule changes, delete that calendar and re-import—event UIDs are stable, so unchanged events keep their identity.
+
+Panels and screenings export with a 15-minute alarm. All-day and drop-in blocks (games tables, autograph lines) export without one—a 15-minute warning for a room that has been open since 10am is noise. Cancelled sessions and stars whose events have left the schedule are skipped, and the app names what it skipped rather than quietly exporting five of your six stars.
+
+Times carry `TZID=America/Los_Angeles` on each event. Apple Calendar is the target; Google Calendar ignores imported alarms.
+
+---
+
+## For developers
+
+### The hybrid data model (read this first)
 
 This repo ships **code and derived facts**. It never ships Sched's program data.
 
@@ -27,7 +60,7 @@ This repo ships **code and derived facts**. It never ships Sched's program data.
 
 Each instance fetches raw schedule data itself at runtime and joins it against the committed enrichment index. If you are tempted to "helpfully" commit `data/events.json` so others don't have to fetch it—don't. That file is Sched-authored prose and is the one thing this repo must not contain.
 
-## Setup
+### Setup
 
 ```sh
 npm install
@@ -38,16 +71,18 @@ npm run dev                             # launch the app
 
 Vite is pinned to `^7` and `@vitejs/plugin-react` to `^5`: electron-vite 5 peers Vite ≤7, while current defaults resolve Vite 8.
 
-### Building a macOS app
+### Building the apps
 
 ```sh
 npm run dist    # electron-vite build + electron-builder → dist/Galileo-<version>-arm64.dmg (+ .zip)
 npm run pack    # unpacked .app in dist/ for a quick local check, no dmg
 ```
 
-Produces an Apple Silicon build. Signing and notarization are opt-in: with no Apple credentials in the environment the output is unsigned (ad-hoc), which is fine for local use. For a release, install a "Developer ID Application" cert in the keychain and export `APPLE_API_KEY` (path to an App Store Connect API `.p8`), `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`; the same `npm run dist` then signs and notarizes.
+`npm run dist` produces an Apple Silicon macOS build. Signing and notarization are opt-in: with no Apple credentials in the environment the output is unsigned (ad-hoc), which is fine for local use. For a release, install a "Developer ID Application" cert in the keychain and export `APPLE_API_KEY` (path to an App Store Connect API `.p8`), `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`; the same `npm run dist` then signs and notarizes.
 
-## Data pipeline
+Windows packaging and cross-platform release builds via GitHub Actions are in progress; the published macOS and Windows binaries under [Releases](https://github.com/wongdigital/galileo/releases) come from that pipeline.
+
+### Data pipeline
 
 `npm run fetch` pulls the full schedule from Sched's public endpoints (2 requests, no auth) and writes a joined dataset:
 
@@ -63,11 +98,11 @@ The two are joined by event UID. The CLI is a thin wrapper over `src/shared/sche
 
 For a different year, set `SCHED_SITE` (e.g. `SCHED_SITE=https://comiccon2027.sched.com npm run fetch`).
 
-### Why the app diffs snapshots instead of trusting Sched's flags
+#### Why the app diffs snapshots instead of trusting Sched's flags
 
 Categories carry `NEW`/`UPDATED`/`CANCELLED` flags, but they are a static editorial annotation, not a change feed. Measured across two fetches 31 hours apart: the flag counts were byte-identical (86/11/1) while nine events changed title or description underneath them, and two events vanished from the feed without ever being flagged cancelled. So the app persists a snapshot each fetch and diffs prior→current per UID. See `docs/solutions/2026-07-18-uid-is-the-identity-key.md`.
 
-## Maintainer runbook: compiling the enrichment index
+### Maintainer runbook: compiling the enrichment index
 
 Speaker and franchise data is not structured in Sched—names appear only inside description prose, and franchises mostly appear in descriptions rather than titles (Spider-Man is in 37 events but only 4 titles; Jurassic and Stranger Things in zero). A title string-match finds a fraction of the real connections, which is why this step exists.
 
@@ -101,31 +136,15 @@ Aliases are applied **last** in the merge, so a rerun never clobbers a correctio
 
 **Curating `data/facet-map.json`.** 144 of Sched's ~181 sub-category tags map to facet dimensions. Unmapped tags surface in a review bucket rather than being silently dropped—most are guest names and small publishers used as sub-categories, which are correctly not facets. Add genuinely new tags as the con approaches; facets are applied at runtime, so con-week NEW events keep working facets without a recompile.
 
-## The entity map
+### How the entity map is built
 
-The second view is a bipartite map: **entities** — a person, a franchise, a genre — are hubs sized by how many events they cover, **events** are dots, and one link joins each event to each entity it carries. A lens picks which kind of entity is drawn; the active filter is the map's only scope, so what the sidebar holds is what the map draws. (An offering lens — hubs meaning "this same thing runs N times" — shipped and was retired: it deduped copies where every other lens relates different events. Its answer lives on the event card as "Also runs," listing the other sittings of a repeated program.)
+The map is a bipartite graph: entities are hubs, events are dots, and one link joins each event to each entity it carries. It replaced an ego-network model that drew events only and connected two events sharing an entity. That shape does not survive the real corpus: a shared entity becomes a clique, so the Comics slice under the Franchises lens produced 659 links, a single 256-node component, and 215 isolated events. Linking through entities instead makes links scale linearly with the corpus rather than quadratically, and it makes "which programs is this person in" a dot you can point at. See `docs/plans/2026-07-19-001-feat-entity-map-graph-plan.md`.
 
-It replaced an ego-network model that drew events only and connected two events sharing an entity. That shape does not survive the real corpus: a shared entity becomes a clique, so the Comics slice under the Franchises lens produced 659 links, a single 256-node component, and 215 isolated events. Linking through entities instead makes links scale linearly with the corpus rather than quadratically, and it makes "which programs is this person in" a dot you can point at. See `docs/plans/2026-07-19-001-feat-entity-map-graph-plan.md`.
+Two rules keep the picture readable. An entity needs at least two in-scope events to be drawn at all—a franchise covering one event adds a dot and a line that say nothing the event's own label does not. And events no hub claims are never hidden; a weak radial force gathers them into a dim halo at the rim, where they stay hoverable like everything else.
 
-Two rules keep the picture readable. An entity needs at least two in-scope events to be drawn at all — a franchise covering one event adds a dot and a line that say nothing the event's own label does not. And events no hub claims are never hidden; a weak radial force gathers them into a dim halo at the rim, where they stay hoverable like everything else.
+An offering lens—hubs meaning "this same thing runs N times"—shipped and was retired: it deduped copies where every other lens relates different events. Its answer lives on the event card as "Also runs," listing the other sittings of a repeated program.
 
-Clicking a hub or a dot pins it and opens a card. Event cards are shared with the 5-day list, so the same click opens the same card in either view, and star and change encodings are read from one place — a starred, moved event looks the same as a row, as a dot, and on the card.
-
-## The chat concierge (bring your own key)
-
-The Chat tab is an optional natural-language way to search, filter, and plan—"show me horror on Saturday", "who's on the Marvel panel", "star the Lucasfilm panel". It stays off until you add your own API key; browse, filter, map, and export need no key and no account.
-
-Add a key in the Chat tab. Galileo works with Anthropic, OpenAI, or OpenRouter—you only need one. The key is encrypted at rest through the OS keychain (Electron `safeStorage`) and lives only in the main process: it never crosses into the renderer, and it never leaves your machine except in requests to the provider you picked.
-
-## Exporting to your phone
-
-Export starred sessions for a single day or the whole con. Import the generated `.ics` into a **dedicated calendar**, not your main one. To refresh after schedule changes, delete that calendar and re-import—event UIDs are stable, so unchanged events keep their identity.
-
-Panels and screenings export with a 15-minute alarm. All-day and drop-in blocks (games tables, autograph lines) export without one—a 15-minute warning for a room that has been open since 10am is noise. Cancelled sessions and stars whose events have left the schedule are skipped, and the app names what it skipped rather than quietly exporting five of your six stars.
-
-Times carry `TZID=America/Los_Angeles` on each event. Apple Calendar is the target; Google Calendar ignores imported alarms.
-
-## Notes
+### Notes
 
 - Event record shape: see `data/events.json`; `shortId` builds the public URL (`/event/<shortId>`), `uid` is the stable 32-hex identifier used for joins, diffs, stars, graph nodes, and exported calendar entries.
 - `src/shared/` is pure—no I/O, no `node:` imports. All I/O lives in `src/main/`. This is what keeps the renderer's sandbox from ever needing to be relaxed.
