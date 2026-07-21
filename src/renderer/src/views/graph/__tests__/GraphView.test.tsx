@@ -336,7 +336,7 @@ describe('GraphView — the all-fringe scope', () => {
     // No fixture event carries a subtype, so the genre lens draws nothing.
     act(() => spine.setLens('facets'))
 
-    expect(await screen.findByText(/No hubs under Genre/)).toBeTruthy()
+    expect(await screen.findByText(/No hubs under Genres/)).toBeTruthy()
     // Both other lenses have exactly one hub over this scope.
     expect(screen.getByText(/Franchises has 1/)).toBeTruthy()
     // Still a map, not an empty state — every event is drawn as fringe.

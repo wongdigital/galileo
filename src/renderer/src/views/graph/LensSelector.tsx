@@ -17,7 +17,7 @@ const LABELS: Record<LensId, { label: string; hint: string }> = {
   // The lens id stays `ip` — it is an identity, not a label.
   ip: { label: 'Franchises', hint: 'shares a franchise' },
   people: { label: 'People', hint: 'shares a named person' },
-  facets: { label: 'Genre', hint: 'shares a genre' },
+  facets: { label: 'Genres', hint: 'shares a genre' },
 }
 
 export const LENS_LABEL = (lens: LensId): string => LABELS[lens].label
