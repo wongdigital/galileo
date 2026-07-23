@@ -501,6 +501,33 @@ describe('GraphView — the navigator', () => {
 })
 
 describe('GraphView — gated WebView lifecycle', () => {
+  it('stops minimap redraws while the mounted canvas is hidden', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval')
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval')
+    const view = await mountSized()
+    await waitFor(() => expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 120))
+    const activeTimer = setIntervalSpy.mock.results.at(-1)?.value as number
+    const activeInstallCount = setIntervalSpy.mock.calls.length
+
+    view.rerender(
+      <SpineProvider>
+        <Probe />
+        <GraphView active={false} />
+      </SpineProvider>,
+    )
+
+    expect(clearIntervalSpy).toHaveBeenCalledWith(activeTimer)
+    expect(setIntervalSpy).toHaveBeenCalledTimes(activeInstallCount)
+
+    view.rerender(
+      <SpineProvider>
+        <Probe />
+        <GraphView active />
+      </SpineProvider>,
+    )
+    expect(setIntervalSpy).toHaveBeenCalledTimes(activeInstallCount + 1)
+  })
+
   it('uses bounded cooldown ticks and keeps the same canvas mounted while paused', async () => {
     const view = await mountSized()
     const canvas = screen.getByTestId('force-canvas')

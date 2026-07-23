@@ -41,6 +41,8 @@ interface MiniMapProps {
   /** The main canvas size, for the viewport rectangle. */
   viewWidth: number
   viewHeight: number
+  /** Whether the graph surface is currently visible and interactive. */
+  active: boolean
 }
 
 /** Canvas-pixel -> graph mapping of the last draw, kept for pointer events. */
@@ -50,7 +52,7 @@ interface Mapping {
   centerY: number
 }
 
-export function MiniMap({ nodes, engine, viewWidth, viewHeight }: MiniMapProps) {
+export function MiniMap({ nodes, engine, viewWidth, viewHeight, active }: MiniMapProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const mapping = useRef<Mapping | null>(null)
   const dragging = useRef(false)
@@ -59,6 +61,12 @@ export function MiniMap({ nodes, engine, viewWidth, viewHeight }: MiniMapProps) 
   const { theme } = useTheme()
 
   useEffect(() => {
+    if (!active) {
+      mapping.current = null
+      dragging.current = false
+      return
+    }
+
     const draw = (): void => {
       const canvas = canvasRef.current
       const ctx = canvas?.getContext('2d')
@@ -130,7 +138,7 @@ export function MiniMap({ nodes, engine, viewWidth, viewHeight }: MiniMapProps) 
     draw()
     const timer = window.setInterval(draw, REDRAW_MS)
     return () => window.clearInterval(timer)
-  }, [nodes, engine, viewWidth, viewHeight, theme])
+  }, [nodes, engine, viewWidth, viewHeight, theme, active])
 
   /** A press is a jump, a drag is a continuous pan — both are just "center the
    *  view where the pointer says", instantly (0ms: an animated pan would lag

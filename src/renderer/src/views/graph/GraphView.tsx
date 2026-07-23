@@ -726,7 +726,13 @@ export function GraphView({ active = true }: { active?: boolean }) {
         ) : null}
 
         {canvasMounted ? (
-          <MiniMap nodes={nodes} engine={engine} viewWidth={size.width} viewHeight={size.height} />
+          <MiniMap
+            nodes={nodes}
+            engine={engine}
+            viewWidth={size.width}
+            viewHeight={size.height}
+            active={active}
+          />
         ) : null}
 
         {/* One presence slot for both card kinds: swapping hub card for event
