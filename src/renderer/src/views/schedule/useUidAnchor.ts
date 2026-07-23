@@ -12,8 +12,16 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 
 interface AnchorableVirtualizer {
-  getVirtualItems: () => { index: number }[]
+  scrollOffset: number | null
+  getVirtualItems: () => { index: number; end: number }[]
   scrollToIndex: (index: number, options?: { align?: 'start' }) => void
+}
+
+/** A star click rebuilds the rows array without changing which uids are in it.
+ *  That identity change must not count as a dataset swap, or every star toggle
+ *  scroll-restores a list that never moved. */
+function sameContent(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((uid, i) => uid === b[i])
 }
 
 export function useUidAnchor(
@@ -33,9 +41,13 @@ export function useUidAnchor(
   const previousReset = useRef(resetKey)
 
   // Runs after every commit, so the anchor is whatever is on screen right now —
-  // specifically the first *anchorable* item, skipping pinned headers.
+  // specifically the first *visible* anchorable item. getVirtualItems() leads
+  // with overscan rows rendered above the viewport; anchoring to one of those
+  // would make every restore land the list a dozen rows too high.
   useEffect(() => {
+    const offset = virtualizer.scrollOffset ?? 0
     for (const item of virtualizer.getVirtualItems()) {
+      if (item.end <= offset) continue
       const id = uids[item.index]
       if (id === undefined) continue
       if (anchorable && !anchorable(id)) continue
@@ -54,7 +66,9 @@ export function useUidAnchor(
     }
 
     if (previousUids.current === uids) return
+    const unchanged = sameContent(previousUids.current, uids)
     previousUids.current = uids
+    if (unchanged) return
 
     const uid = anchor.current
     if (!uid) return
