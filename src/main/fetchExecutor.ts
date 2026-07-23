@@ -12,15 +12,12 @@
  * worst.
  */
 
+import type { ScheduleSources } from '../shared/schedule'
+
 const USER_AGENT = 'Galileo (+https://github.com/wongdigital/galileo; roger@wong.digital)'
 
 /** Drop a stalled request rather than hold the socket open on Sched's side. */
 const TIMEOUT_MS = 15_000
-
-export interface ScheduleSources {
-  ics: string
-  listHtml: string
-}
 
 export async function fetchScheduleSources(site: string, signal?: AbortSignal): Promise<ScheduleSources> {
   const get = async (path: string): Promise<string> => {

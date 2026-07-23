@@ -6,8 +6,8 @@ import { SnapshotStore } from './snapshotStore'
 import { StarStore, registerStarIpc } from './starStore'
 import { registerIcsIpc } from './icsExport'
 import { KeyStore, registerLlmIpc } from './llm'
-import { CURRENT_SCHEMA_VERSION, acknowledgeChanges, buildDataset, resolveRefresh } from '../shared/schedule'
-import type { DatasetProjection, FetchedDataset, ScheduleEvent } from '../shared/schedule'
+import { acknowledgeChanges, performRefresh } from '../shared/schedule'
+import type { DatasetProjection, RefreshDependencies, ScheduleEvent } from '../shared/schedule'
 
 /**
  * Electron main process. All I/O lives on this side of the bridge — fetch
@@ -65,6 +65,7 @@ let store: SnapshotStore
 let stars: StarStore
 let keys: KeyStore
 let canonicalEventCache: readonly ScheduleEvent[] = []
+let refreshDependencies: RefreshDependencies
 
 /**
  * The canonical event list, resolved from main's own snapshots.
@@ -84,40 +85,11 @@ async function reloadCanonicalEvents(): Promise<void> {
     ((await store.readSnapshot('last-known-good')) ?? (await store.readSnapshot('last-fetched')))?.events ?? []
 }
 
-/**
- * One refresh: two HTTP requests, parse, sanitize, join, then let the guard
- * decide what the renderer actually sees. Diffing happens here and only here —
- * the renderer receives a DatasetProjection, never a snapshot.
- */
 async function refreshSchedule(acceptAnyway: boolean): Promise<DatasetProjection> {
-  let fetched: FetchedDataset | null = null
-  try {
-    const { ics, listHtml } = await fetchScheduleSources(SITE)
-    const { events, stats } = buildDataset(ics, listHtml, { site: SITE })
-    fetched = { events, stats, site: SITE, fetchedAt: new Date().toISOString() }
-    await store.writeSnapshot('last-fetched', {
-      schemaVersion: CURRENT_SCHEMA_VERSION,
-      fetchedAt: fetched.fetchedAt,
-      site: SITE,
-      events,
-      stats,
-    })
-  } catch (error) {
-    // Offline, DNS down, Sched 500 — all the same story to the caller: there is
-    // no new data, so fall back and say so rather than blanking the app.
-    console.warn('[schedule] refresh failed, falling back to last-known-good:', error)
-  }
-
-  const outcome = resolveRefresh({
-    fetched,
-    lastKnownGood: await store.readSnapshot('last-known-good'),
-    log: await store.readChangeLog(),
-    acceptAnyway,
-  })
-  if (outcome.promote) await store.writeSnapshot('last-known-good', outcome.promote)
-  await store.writeChangeLog(outcome.log)
-  await reloadCanonicalEvents()
-  return outcome.projection
+  const projection = await performRefresh(refreshDependencies, { acceptAnyway })
+  // Export and chat keep resolving against exactly the data the renderer sees.
+  canonicalEventCache = projection.events
+  return projection
 }
 
 /**
@@ -167,6 +139,14 @@ app.whenReady().then(async () => {
   store = new SnapshotStore(app.getPath('userData'))
   stars = new StarStore(app.getPath('userData'))
   keys = new KeyStore(app.getPath('userData'), safeStorage)
+  refreshDependencies = {
+    site: SITE,
+    slots: store,
+    fetchSources: () => fetchScheduleSources(SITE),
+    warn: (error) => {
+      console.warn('[schedule] refresh failed, falling back to last-known-good:', error)
+    },
+  }
   await reloadCanonicalEvents()
   registerIpc()
   installAppMenu()
