@@ -11,16 +11,27 @@ import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { useUidAnchor } from '../useUidAnchor'
 
+const ROW = 10
+
 /**
- * Stands in for the TanStack virtualizer's two-method surface. `topIndex` is
- * what the user has scrolled to; the hook reads it after every commit.
+ * Stands in for the TanStack virtualizer's surface. `topIndex` is the first
+ * row actually visible; `overscan` prepends off-screen rows to
+ * `getVirtualItems()` exactly like the real defaultRangeExtractor does, so the
+ * fake can't hide the difference between "first rendered" and "first visible".
  */
-function fakeVirtualizer(topIndex = 0) {
+function fakeVirtualizer(topIndex = 0, overscan = 0) {
   return {
     topIndex,
+    overscan,
+    scrollOffset: topIndex * ROW,
     scrollToIndex: vi.fn<(index: number, options?: { align?: 'start' }) => void>(),
     getVirtualItems() {
-      return [{ index: this.topIndex }]
+      const first = Math.max(0, this.topIndex - this.overscan)
+      const items: { index: number; end: number }[] = []
+      for (let index = first; index <= this.topIndex + 2; index++) {
+        items.push({ index, end: (index + 1) * ROW })
+      }
+      return items
     },
   }
 }
@@ -92,6 +103,40 @@ describe('useUidAnchor', () => {
     rerender(<Harness virtualizer={virtualizer} uids={uids} resetKey={DAY} />)
 
     expect(virtualizer.scrollToIndex).not.toHaveBeenCalled()
+  })
+
+  it('does not scroll when the array identity changes but the content does not', () => {
+    // A star click rebuilds the rows array without changing which uids are in
+    // it. Restoring scroll for that "swap" is what made the list jump on star.
+    const virtualizer = fakeVirtualizer(2)
+    const { rerender } = render(
+      <Harness virtualizer={virtualizer} uids={['a', 'b', 'c']} resetKey={DAY} />
+    )
+    virtualizer.scrollToIndex.mockClear()
+
+    rerender(<Harness virtualizer={virtualizer} uids={['a', 'b', 'c']} resetKey={DAY} />)
+
+    expect(virtualizer.scrollToIndex).not.toHaveBeenCalled()
+  })
+
+  it('anchors to the first visible row, not an overscan row above the viewport', () => {
+    // With overscan, getVirtualItems() starts rows above what the user can
+    // see. Anchoring to one of those restores the scroll to an off-screen row
+    // — the "list jumps part way up" bug.
+    const virtualizer = fakeVirtualizer(3, 2)
+    const before = ['a', 'b', 'c', 'd', 'e', 'f']
+    const { rerender } = render(
+      <Harness virtualizer={virtualizer} uids={before} resetKey={DAY} />
+    )
+    virtualizer.scrollToIndex.mockClear()
+
+    // 'a' drops out; the visible top row 'd' moves from index 3 to index 2.
+    // Anchoring to the overscan row 'b' would restore to index 0 instead.
+    rerender(
+      <Harness virtualizer={virtualizer} uids={['b', 'c', 'd', 'e', 'f']} resetKey={DAY} />
+    )
+
+    expect(virtualizer.scrollToIndex).toHaveBeenCalledWith(2, { align: 'start' })
   })
 
   it('returns to the top when the day changes, because that is a deliberate move', () => {
