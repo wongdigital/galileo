@@ -616,6 +616,22 @@ describe('refresh failure', () => {
 })
 
 describe('responsive shell', () => {
+  it('clears native window controls only in the Capacitor shell', async () => {
+    installMatchMedia(820)
+    const capacitorView = render(<App locationProtocol="capacitor:" />)
+    await screen.findByText('Drawing Monsters for a Living')
+
+    expect(screen.getByRole('button', { name: 'Open planning sidebar' }).classList)
+      .toContain('ml-14')
+
+    capacitorView.unmount()
+    render(<App locationProtocol="https:" />)
+    await screen.findByText('Drawing Monsters for a Living')
+
+    expect(screen.getByRole('button', { name: 'Open planning sidebar' }).classList)
+      .not.toContain('ml-14')
+  })
+
   it('keeps the desktop shell docked at wide and collapses it at medium', async () => {
     const view = await mount()
     expect(view.container.firstElementChild?.getAttribute('data-viewport-tier')).toBe('wide')

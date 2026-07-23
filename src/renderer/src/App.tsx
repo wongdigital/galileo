@@ -373,12 +373,19 @@ function Sidebar({ tier, open, onClose, invokerRef }: SidebarProps) {
   )
 }
 
-function Shell() {
+interface ShellProps {
+  locationProtocol?: string
+}
+
+function Shell({ locationProtocol }: ShellProps) {
   const { view, status } = useSpine()
   const tier = useViewportTier()
   const electron = isElectronShell()
+  const protocol =
+    locationProtocol ??
+    (typeof window !== 'undefined' ? window.location.protocol : '')
   const capacitor =
-    !electron && typeof window !== 'undefined' && window.location.protocol === 'capacitor:'
+    !electron && protocol === 'capacitor:'
   const overlay = tier !== 'wide'
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const sidebarInvokerRef = useRef<HTMLButtonElement>(null)
@@ -492,10 +499,10 @@ function Shell() {
   )
 }
 
-export default function App() {
+export default function App({ locationProtocol }: ShellProps = {}) {
   return (
     <SpineProvider>
-      <Shell />
+      <Shell locationProtocol={locationProtocol} />
     </SpineProvider>
   )
 }

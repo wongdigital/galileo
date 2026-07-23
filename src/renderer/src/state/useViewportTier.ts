@@ -49,8 +49,17 @@ export function viewportTierForWidth(
 export function useViewportTier(): ViewportTier {
   const readWidth = (): number => {
     if (typeof window === 'undefined') return VIEWPORT_TIER_BOUNDARIES.wide
-    const visualWidth = window.visualViewport?.width
-    return typeof visualWidth === 'number' && visualWidth > 0 ? visualWidth : window.innerWidth
+    const visualViewport = window.visualViewport
+    const visualWidth = visualViewport?.width
+    const visualScale = visualViewport?.scale
+    return typeof visualWidth === 'number' &&
+      Number.isFinite(visualWidth) &&
+      visualWidth > 0 &&
+      typeof visualScale === 'number' &&
+      Number.isFinite(visualScale) &&
+      visualScale > 0
+      ? visualWidth * visualScale
+      : window.innerWidth
   }
   const [tier, setTier] = useState<ViewportTier>(() => viewportTierForWidth(readWidth()))
 
@@ -68,6 +77,7 @@ export function useViewportTier(): ViewportTier {
         ? WATCH_QUERIES.map((query) => window.matchMedia(query))
         : []
     for (const query of queries) query.addEventListener('change', update)
+    update()
     return () => {
       window.removeEventListener('resize', update)
       visualViewport?.removeEventListener('resize', update)

@@ -94,6 +94,7 @@ describe('useViewportTier', () => {
     const listeners = new Set<EventListener>()
     const visualViewport = {
       width: 1024,
+      scale: 1,
       addEventListener: (_type: string, listener: EventListener) => listeners.add(listener),
       removeEventListener: (_type: string, listener: EventListener) => listeners.delete(listener),
     }
@@ -109,6 +110,95 @@ describe('useViewportTier', () => {
     act(() => {
       for (const listener of listeners) listener(new Event('resize'))
     })
+
+    expect(result.current).toBe('medium')
+  })
+
+  it('keeps the layout tier stable during pinch zoom', () => {
+    installViewport(1024)
+    const listeners = new Set<EventListener>()
+    const visualViewport = {
+      width: 1024,
+      scale: 1,
+      addEventListener: (_type: string, listener: EventListener) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: EventListener) => listeners.delete(listener),
+    }
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    })
+
+    const { result } = renderHook(() => useViewportTier())
+    visualViewport.width = 683
+    act(() => {
+      for (const listener of listeners) listener(new Event('resize'))
+    })
+    expect(result.current).toBe('medium')
+
+    visualViewport.width = 341.5
+    visualViewport.scale = 2
+    act(() => {
+      for (const listener of listeners) listener(new Event('resize'))
+    })
+
+    expect(result.current).toBe('medium')
+  })
+
+  it('resamples after subscribing so a setup-time resize is not missed', () => {
+    installViewport(1024)
+    const visualViewport = {
+      width: 1024,
+      scale: 1,
+      addEventListener: () => {
+        visualViewport.width = 683
+      },
+      removeEventListener: () => {},
+    }
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    })
+
+    const { result } = renderHook(() => useViewportTier())
+
+    expect(result.current).toBe('medium')
+  })
+
+  it('removes the visual viewport listener on unmount', () => {
+    installViewport(1024)
+    const listeners = new Set<EventListener>()
+    const visualViewport = {
+      width: 1024,
+      scale: 1,
+      addEventListener: (_type: string, listener: EventListener) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: EventListener) => listeners.delete(listener),
+    }
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    })
+
+    const { unmount } = renderHook(() => useViewportTier())
+    expect(listeners.size).toBe(1)
+
+    unmount()
+
+    expect(listeners.size).toBe(0)
+  })
+
+  it('falls back to innerWidth when the visual viewport width is invalid', () => {
+    installViewport(820)
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: {
+        width: 0,
+        scale: 1,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      },
+    })
+
+    const { result } = renderHook(() => useViewportTier())
 
     expect(result.current).toBe('medium')
   })
