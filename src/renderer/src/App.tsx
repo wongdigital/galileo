@@ -381,7 +381,7 @@ function Sidebar({ tier, open, onClose, invokerRef }: SidebarProps) {
 }
 
 function Shell() {
-  const { view } = useSpine()
+  const { view, status } = useSpine()
   const tier = useViewportTier()
   const electron = isElectronShell()
   const overlay = tier !== 'wide'
@@ -458,7 +458,11 @@ function Shell() {
           invokerRef={sidebarInvokerRef}
         />
 
-        <main inert={sidebarOpen && overlay} className="flex min-w-0 flex-1 flex-col">
+        <main
+          inert={sidebarOpen && overlay}
+          aria-busy={status === 'loading'}
+          className="flex min-w-0 flex-1 flex-col"
+        >
           {tier === 'compact' ? (
             <CompactStub />
           ) : view === 'schedule' ? (

@@ -12,7 +12,7 @@
  *
  * Keys and model live in a setup screen the gear under the composer opens.
  * The API key is stored encrypted in main and never read back here; the model
- * choice per provider is not secret and persists in localStorage.
+ * choice per provider is not secret and persists in the settings artifact.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -52,10 +52,15 @@ export function ChatTab() {
   const [datasetReady, setDatasetReady] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const modelRevision = useRef(0)
 
-  // Load the persisted model choices once.
+  // Load the persisted model choices once. A slow read may not replace a
+  // selection the user already made while it was pending.
   useEffect(() => {
-    setModels(loadModels())
+    const revisionAtStart = modelRevision.current
+    void loadModels().then((stored) => {
+      if (modelRevision.current === revisionAtStart) setModels(stored)
+    })
   }, [])
 
   // Load which providers have a key; pick the first that does, and open setup
@@ -115,9 +120,10 @@ export function ChatTab() {
   const modelChoices = liveModels[provider] ?? MODELS[provider]
 
   const setModelFor = useCallback((target: ProviderId, id: string) => {
+    modelRevision.current += 1
     setModels((prev) => {
       const next = { ...prev, [target]: id }
-      saveModels(next)
+      void saveModels(next)
       return next
     })
   }, [])

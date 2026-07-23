@@ -533,6 +533,30 @@ describe('change flags', () => {
 })
 
 describe('refresh failure', () => {
+  it('designs the first-run offline state and issues exactly one refresh per retry', async () => {
+    refresh.mockResolvedValueOnce(
+      projection({ events: [], fetchedAt: null, stale: true }),
+    )
+    let settleRetry!: (value: DatasetProjection) => void
+    refresh.mockReturnValueOnce(new Promise((resolve) => {
+      settleRetry = resolve
+    }))
+
+    render(<App />)
+    const retry = await screen.findByRole('button', { name: 'Retry fetching schedule' })
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('main')?.getAttribute('aria-busy')).toBe('false')
+
+    fireEvent.click(retry)
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect((retry as HTMLButtonElement).disabled).toBe(true)
+    expect(document.querySelector('main')?.getAttribute('aria-busy')).toBe('true')
+
+    await act(async () => settleRetry(projection({ events: [], fetchedAt: null, stale: true })))
+    await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false))
+    expect(refresh).toHaveBeenCalledTimes(2)
+  })
+
   it('shows a stale banner over an intact list', async () => {
     await mount()
     refresh.mockRejectedValueOnce(new Error('getaddrinfo ENOTFOUND'))

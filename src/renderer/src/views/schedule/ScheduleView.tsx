@@ -202,12 +202,24 @@ export function ScheduleView() {
             onClear={() => spine.setFilter(EMPTY_FILTER)}
           />
         ) : (
-          <div className="flex flex-1 items-center justify-center">
+          <div
+            aria-live="polite"
+            className="flex flex-1 flex-col items-center justify-center gap-5"
+          >
             <InstrumentState eyebrow="5-Day schedule" loading={spine.status === 'loading'}>
               {spine.status === 'loading'
                 ? 'Fetching the schedule…'
-                : 'No schedule data yet. Refresh to fetch from Sched.'}
+                : 'No saved schedule is available. Connect to the internet and try again.'}
             </InstrumentState>
+            <button
+              type="button"
+              disabled={spine.status === 'loading'}
+              onClick={() => void spine.refresh()}
+              aria-label="Retry fetching schedule"
+              className="min-h-11 rounded-lg border border-lumen-dim px-4 py-2 text-[12.5px] text-lumen transition-colors duration-150 hover:bg-lumen/10 disabled:cursor-wait disabled:border-line disabled:text-ink-faint"
+            >
+              {spine.status === 'loading' ? 'Fetching…' : 'Retry'}
+            </button>
           </div>
         )
       ) : (

@@ -10,7 +10,7 @@ import {
 } from 'react'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import { normalizeStars, starFromEvent, toggleStar, unstar, type StarRecord } from '@shared/stars'
-import { EMPTY_FILTER, type FilterState } from '@shared/filter'
+import { EMPTY_FILTER, findDimension, type FilterChip, type FilterState } from '@shared/filter'
 import type { LensId } from '@shared/graph'
 import { bridge } from '../bridge'
 
@@ -85,6 +85,48 @@ const SpineContext = createContext<SpineState | null>(null)
 const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
 
+function restoredFilter(value: unknown): FilterState | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const candidate = value as Partial<FilterState>
+  if (
+    !Array.isArray(candidate.chips) ||
+    typeof candidate.text !== 'string' ||
+    typeof candidate.starredOnly !== 'boolean' ||
+    typeof candidate.changedOnly !== 'boolean'
+  ) {
+    return null
+  }
+
+  const chips: FilterChip[] = []
+  for (const valueChip of candidate.chips) {
+    if (!valueChip || typeof valueChip !== 'object' || Array.isArray(valueChip)) return null
+    const chip = valueChip as Partial<FilterChip>
+    const dimension =
+      typeof chip.dimension === 'string' ? findDimension(chip.dimension) : null
+    if (
+      !dimension ||
+      typeof chip.value !== 'string' ||
+      chip.value.length === 0 ||
+      (chip.negated !== undefined && typeof chip.negated !== 'boolean') ||
+      (chip.negated === true && dimension.kind === 'interest')
+    ) {
+      return null
+    }
+    chips.push({
+      dimension: dimension.id,
+      value: chip.value,
+      ...(chip.negated === true ? { negated: true } : {}),
+    })
+  }
+
+  return {
+    chips,
+    text: candidate.text,
+    starredOnly: candidate.starredOnly,
+    changedOnly: candidate.changedOnly,
+  }
+}
+
 export function SpineProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<ViewMode>('schedule')
   const [selectedUid, setSelectedUid] = useState<string | null>(null)
@@ -96,7 +138,8 @@ export function SpineProvider({ children }: { children: ReactNode }) {
   const [stars, setStars] = useState<StarRecord[]>([])
   const [starError, setStarError] = useState<string | null>(null)
 
-  const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER)
+  const [filter, setFilterState] = useState<FilterState>(EMPTY_FILTER)
+  const filterRevision = useRef(0)
   const [activeDay, setActiveDay] = useState<string | null>(null)
 
   // IP is the opening lens because it is the one with data across the whole
@@ -107,26 +150,38 @@ export function SpineProvider({ children }: { children: ReactNode }) {
   // Guards the effect against StrictMode's double-invoke, which would otherwise
   // fire two live fetches at Sched on every mount in development.
   const started = useRef(false)
+  const refreshes = useRef(new Map<string, Promise<void>>())
 
-  const refresh = useCallback(async (options?: { acceptAnyway?: boolean }) => {
+  const refresh = useCallback((options?: { acceptAnyway?: boolean }): Promise<void> => {
     const api = bridge()
     if (!api) {
       setStatus('ready')
       setRefreshError('No Electron bridge — the app is running outside its shell.')
-      return
+      return Promise.resolve()
     }
+
+    const key = options?.acceptAnyway ? 'accept-anyway' : 'normal'
+    const existing = refreshes.current.get(key)
+    if (existing) return existing
+
     setStatus('loading')
-    try {
-      const next = (await api.schedule.refresh(options)) as DatasetProjection
-      setDataset(next)
-      setRefreshError(null)
-    } catch (error) {
-      // The previous dataset stays exactly where it is. A failed refresh shows
-      // a stale banner over a working list, never a blank app.
-      setRefreshError(message(error))
-    } finally {
-      setStatus('ready')
-    }
+    let pending!: Promise<void>
+    pending = (async () => {
+      try {
+        const next = (await api.schedule.refresh(options)) as DatasetProjection
+        setDataset(next)
+        setRefreshError(null)
+      } catch (error) {
+        // The previous dataset stays exactly where it is. A failed refresh shows
+        // a stale banner over a working list, never a blank app.
+        setRefreshError(message(error))
+      } finally {
+        if (refreshes.current.get(key) === pending) refreshes.current.delete(key)
+        if (refreshes.current.size === 0) setStatus('ready')
+      }
+    })()
+    refreshes.current.set(key, pending)
+    return pending
   }, [])
 
   const acknowledge = useCallback(async (uids: string[]) => {
@@ -208,6 +263,32 @@ export function SpineProvider({ children }: { children: ReactNode }) {
     },
     [persistStars, stars],
   )
+
+  const setFilter = useCallback((next: FilterState) => {
+    filterRevision.current += 1
+    setFilterState(next)
+    const api = bridge()
+    if (api) {
+      void api.settings
+        .set('filters', next)
+        .catch((error: unknown) => console.warn('[settings] filter write failed:', error))
+    }
+  }, [])
+
+  useEffect(() => {
+    const api = bridge()
+    if (!api) return
+    const revisionAtStart = filterRevision.current
+    void api.settings
+      .get('filters')
+      .then((stored) => {
+        const next = restoredFilter(stored)
+        // Loading a durable value must never replace a chip/search interaction
+        // that happened while the platform call was still pending.
+        if (next && filterRevision.current === revisionAtStart) setFilterState(next)
+      })
+      .catch((error: unknown) => console.warn('[settings] filter read failed:', error))
+  }, [])
 
   useEffect(() => {
     if (started.current) return

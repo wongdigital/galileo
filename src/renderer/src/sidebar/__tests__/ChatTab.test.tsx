@@ -15,6 +15,7 @@ import type { ChatResponse, KeyStatus } from '@shared/chat'
 import type { StarRecord } from '@shared/stars'
 import { clearFakeBridge, installFakeBridge, type FakePlatformBridge } from '../../test/fakeBridge'
 import type { PlatformBridge } from '@shared/bridge/types'
+import { defaultModels } from '../chatModels'
 
 vi.mock('@data/enrichment.json', () => ({
   default: {
@@ -147,6 +148,29 @@ async function sendMessage(text: string) {
 }
 
 describe('ChatTab', () => {
+  it('keeps the transcript session-only across a fresh mount', async () => {
+    chat.mockResolvedValue({
+      ok: true,
+      turn: {
+        message: { role: 'assistant', content: 'A session-only answer.' },
+        eventUids: [],
+        toolTrace: [],
+      },
+    })
+    const view = await mount()
+    await sendMessage('remember this for now')
+    await screen.findByText('A session-only answer.')
+
+    view.unmount()
+    await mount()
+
+    expect(screen.queryByText('A session-only answer.')).toBeNull()
+    expect(api.settings.set).not.toHaveBeenCalledWith(
+      expect.stringMatching(/chat.*(entries|transcript|history)/i),
+      expect.anything(),
+    )
+  })
+
   it('opens setup and disables the composer when no key is stored', async () => {
     keyStatus = { anthropic: 'absent', openai: 'absent', openrouter: 'absent' }
     render(
@@ -157,6 +181,36 @@ describe('ChatTab', () => {
     await waitFor(() => expect(screen.getByText('Model & keys')).toBeTruthy())
     expect(screen.getByPlaceholderText(/Anthropic API key/)).toBeTruthy()
     expect((screen.getByPlaceholderText('Add an API key to start') as HTMLTextAreaElement).disabled).toBe(true)
+  })
+
+  it('does not let a slow model restore overwrite a new selection', async () => {
+    keyStatus = { anthropic: 'absent', openai: 'absent', openrouter: 'absent' }
+    let resolveModels!: (value: unknown) => void
+    api.settings.get.mockImplementation((name) =>
+      name === 'chat.models'
+        ? new Promise((resolve) => {
+            resolveModels = resolve
+          })
+        : Promise.resolve(null),
+    )
+    render(
+      <SpineProvider>
+        <ChatTab />
+      </SpineProvider>,
+    )
+    await screen.findByText('Model & keys')
+    const model = screen.getByLabelText('Model', { selector: 'select' }) as HTMLSelectElement
+
+    fireEvent.change(model, { target: { value: 'claude-sonnet-5' } })
+    resolveModels({ ...defaultModels(), anthropic: 'claude-haiku-4-5' })
+
+    await waitFor(() =>
+      expect(api.settings.set).toHaveBeenCalledWith(
+        'chat.models',
+        expect.objectContaining({ anthropic: 'claude-sonnet-5' }),
+      ),
+    )
+    expect(model.value).toBe('claude-sonnet-5')
   })
 
   it('remembers a draft key for one provider while entering another', async () => {

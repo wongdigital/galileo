@@ -10,7 +10,7 @@
  *   renderer optimistically set.
  */
 
-import { act, render, waitFor } from '@testing-library/react'
+import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SpineProvider, useSpine, type SpineState } from '../spine'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
@@ -59,14 +59,16 @@ function Probe() {
 }
 
 async function mount() {
+  let view!: ReturnType<typeof render>
   await act(async () => {
-    render(
+    view = render(
       <SpineProvider>
         <Probe />
       </SpineProvider>
     )
   })
   await waitFor(() => expect(spine.status).toBe('ready'))
+  return view
 }
 
 beforeEach(() => {
@@ -79,6 +81,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  cleanup()
   vi.restoreAllMocks()
   clearFakeBridge()
 })
@@ -104,7 +107,90 @@ describe('initial load', () => {
   })
 })
 
+describe('filter persistence', () => {
+  const restoredFilter = {
+    chips: [{ dimension: 'genre', value: 'Horror' }],
+    text: 'monsters',
+    starredOnly: true,
+    changedOnly: false,
+  }
+
+  it('restores a valid filter and writes later changes through the bridge', async () => {
+    api.settings.get.mockResolvedValue(restoredFilter)
+    await mount()
+
+    await waitFor(() => expect(spine.filter).toEqual(restoredFilter))
+    expect(api.settings.get).toHaveBeenCalledWith('filters')
+    expect(api.settings.set).not.toHaveBeenCalled()
+
+    const next = { ...restoredFilter, text: 'robots' }
+    act(() => spine.setFilter(next))
+    await waitFor(() => expect(api.settings.set).toHaveBeenCalledWith('filters', next))
+  })
+
+  it('ignores corrupt persisted filter shapes', async () => {
+    api.settings.get.mockResolvedValue({
+      chips: [{ dimension: 'genre', value: 42 }],
+      text: 'monsters',
+      starredOnly: 'yes',
+      changedOnly: false,
+    })
+    await mount()
+
+    await waitFor(() => expect(api.settings.get).toHaveBeenCalledWith('filters'))
+    expect(spine.filter).toEqual({ chips: [], text: '', starredOnly: false, changedOnly: false })
+    expect(api.settings.set).not.toHaveBeenCalled()
+  })
+
+  it('does not overwrite an interaction made while restoration is still pending', async () => {
+    let resolveStored!: (value: unknown) => void
+    api.settings.get.mockReturnValue(new Promise((resolve) => {
+      resolveStored = resolve
+    }))
+    await mount()
+
+    const typed = { ...restoredFilter, text: 'typed before restore' }
+    act(() => spine.setFilter(typed))
+    resolveStored(restoredFilter)
+
+    await waitFor(() => expect(api.settings.set).toHaveBeenCalledWith('filters', typed))
+    expect(spine.filter).toEqual(typed)
+  })
+
+  it('round-trips a filter through a fresh spine mount', async () => {
+    let stored: unknown = null
+    api.settings.get.mockImplementation(async () => stored)
+    api.settings.set.mockImplementation(async (_name, value) => {
+      stored = value
+    })
+    const first = await mount()
+    const chosen = { ...restoredFilter, text: 'survives termination' }
+
+    act(() => spine.setFilter(chosen))
+    await waitFor(() => expect(stored).toEqual(chosen))
+    first.unmount()
+    await mount()
+
+    await waitFor(() => expect(spine.filter).toEqual(chosen))
+  })
+})
+
 describe('refresh failure mid-session', () => {
+  it('coalesces concurrent refresh requests into one platform fetch', async () => {
+    await mount()
+    let settleRefresh!: (value: DatasetProjection) => void
+    api.schedule.refresh.mockReturnValueOnce(new Promise((resolve) => {
+      settleRefresh = resolve
+    }))
+
+    const first = spine.refresh()
+    const second = spine.refresh()
+
+    expect(api.schedule.refresh).toHaveBeenCalledTimes(2)
+    await act(async () => settleRefresh(projection()))
+    await Promise.all([first, second])
+  })
+
   it('keeps the previous dataset on screen and reports the error', async () => {
     await mount()
     expect(spine.dataset?.events).toHaveLength(2)

@@ -13,11 +13,15 @@ import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
 import './styles/observatory.css'
 
-// Before mount, so the first paint is already in the stored theme.
-initTheme()
+async function mount(): Promise<void> {
+  // Durable settings are async on every platform. Wait before mounting so
+  // application content never paints in the wrong theme.
+  await initTheme()
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+void mount()

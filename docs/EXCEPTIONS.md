@@ -51,3 +51,14 @@ is itself readable. Format instructions do not apply (free text).
 The BrowserWindow `backgroundColor` is the dark ground, so light-theme users
 see a dark frame for the instant before first paint. Cosmetic (LOW), visible
 only at launch; the renderer applies the stored theme before React mounts.
+
+## Fixed type ramp on iPad
+
+**Rule:** respect platform text-size preferences. **Relaxation:** v1 keeps
+Galileo's fixed CSS type ramp rather than mapping iOS Dynamic Type categories
+into the dense schedule instrument.
+
+**Mitigation:** the viewport does not disable user scaling, primary prose and
+controls retain the AA contrast and target-size floors, and the 5-Day and
+related-panel list paths remain available at every width. Dynamic Type mapping
+is required follow-up work before claiming native text-size adaptation.
