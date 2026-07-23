@@ -108,6 +108,9 @@ docs/plans/        implementation plans, YYYY-MM-DD-NNN-<type>-<slug>-plan.md
 docs/brainstorms/  requirements documents that precede plans
 ```
 
+`CONCEPTS.md` holds Galileo's shared domain vocabulary and is relevant when orienting to the
+codebase or discussing domain concepts.
+
 `docs/solutions/` is the knowledge store, and it's worth searching before debugging or making
 a decision in an area it covers. Flat directory, one file per learning, named
 `YYYY-MM-DD-<slug>.md`, with frontmatter:

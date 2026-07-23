@@ -2,6 +2,7 @@
 title: "Physical iPad release rehearsal: verified paths and accepted follow-ups"
 type: decision
 date: 2026-07-22
+last_updated: 2026-07-22
 unit: U11
 requirements: [R7, R8, R9, R13, R14, R15]
 ---
@@ -45,18 +46,64 @@ At half width, iPadOS kept `window.innerWidth` at the full layout width while
 therefore stayed in its wide tier and squeezed the graph beside the persistent
 sidebar.
 
-Commit `70259a0` makes viewport-tier selection prefer the visual viewport and
-subscribe to its resize events. A regression test holds `innerWidth` at 1,024
+The first device fix made viewport-tier selection prefer the visual viewport
+and subscribe to its resize events. A regression holds `innerWidth` at 1,024
 while changing the visual viewport to 683 and verifies the tier changes from
-wide to medium. The rebuilt device app displayed the full-width 5-Day view and
-the Related fallback at half width.
+wide to medium
+(`src/renderer/src/state/__tests__/useViewportTier.test.tsx:92-115`). The
+rebuilt device app displayed the full-width 5-Day view and the Related fallback
+at half width.
+
+That first fix was necessary but incomplete. Follow-up review (session history)
+found two ways that raw `visualViewport.width` plus a resize listener could
+still select the wrong tier:
+
+- Pinch zoom reduces the visual viewport's CSS-pixel width even though the
+  underlying responsive layout width has not changed. Treating the raw width
+  as layout geometry could demote the shell during magnification.
+- The hook reads its initial width during render but installs listeners later
+  in an effect. A viewport transition between those stages could be missed
+  until another resize event arrived.
+
+The durable rule is to normalize visual geometry before applying breakpoints.
+When both values are finite and positive, Galileo uses
+`visualViewport.width * visualViewport.scale`; otherwise it falls back to
+`window.innerWidth` (`src/renderer/src/state/useViewportTier.ts:50-63`). At
+scale 1 the product still follows the Split View tile. At 2x zoom, a visual
+width of 341.5 produces the same 683-pixel responsive width, so zoom does not
+masquerade as window resizing.
+
+The hook then registers its window, visual-viewport, and media-query listeners
+before calling the shared `update()` function once. That post-subscription
+resample closes the render-to-effect handoff without creating another event
+path, and cleanup removes every listener symmetrically
+(`src/renderer/src/state/useViewportTier.ts:66-85`).
+
+The regression matrix preserves all four boundaries of this behavior:
+
+- Split View can narrow the tier while `innerWidth` remains unchanged
+  (`src/renderer/src/state/__tests__/useViewportTier.test.tsx:92-115`).
+- Reciprocal visual width and scale changes preserve the tier during pinch
+  zoom (`src/renderer/src/state/__tests__/useViewportTier.test.tsx:117-145`).
+- A width change during listener installation is reconciled without requiring
+  another event
+  (`src/renderer/src/state/__tests__/useViewportTier.test.tsx:147-165`).
+- Unmount cleanup and invalid visual-viewport fallback remain covered
+  (`src/renderer/src/state/__tests__/useViewportTier.test.tsx:167-204`).
+
+Future responsive code should consume the centralized
+`compact | medium | wide` result rather than reading browser geometry
+independently. The hook owns both its zoom-normalized measurement and the
+directional hysteresis policy
+(`src/renderer/src/state/useViewportTier.ts:3-41`).
 
 ### iPadOS window controls need reserved space
 
 In overlay mode, the iPadOS 26 window-control pill covered Galileo's planning
-menu. Commit `d10da0e` reserves native-only leading space for the menu when the
-app runs under the `capacitor:` protocol. The rebuilt app showed distinct
-system and Galileo controls with a full touch target.
+menu. The current shell reserves native-only leading space for the menu when
+the app runs under the `capacitor:` protocol
+(`src/renderer/src/App.tsx:384-421`). The rebuilt app showed distinct system
+and Galileo controls with a full touch target.
 
 ## Accepted follow-ups
 
@@ -92,8 +139,13 @@ widths.
 
 The live Sched feed remained healthy, so it did not naturally trigger the
 drift guard. The production filesystem replace window was also too short to
-target deterministically. Both paths retain automated coverage; the remaining
-hardware fault-injection decisions are explicit entries in `docs/TODO.md`.
+target deterministically. Both paths retain automated coverage: the drift guard
+holds suspect data until explicit acceptance
+(`src/shared/schedule/__tests__/refresh.test.ts:119-132`), while interrupted
+snapshot promotion and atomic JSON replacement retain readable data
+(`src/shared/schedule/__tests__/refresh.test.ts:200-214`,
+`src/main/__tests__/nodeJsonStore.test.ts:27-61`). The remaining hardware
+fault-injection decisions are explicit entries in `docs/TODO.md`.
 
 ## Release disposition
 
