@@ -8,6 +8,9 @@ import { registerIcsIpc } from './icsExport'
 import { KeyStore, registerLlmIpc } from './llm'
 import { acknowledgeChanges, performRefresh } from '../shared/schedule'
 import type { DatasetProjection, RefreshDependencies, ScheduleEvent } from '../shared/schedule'
+import { SettingsSlots } from '../shared/storage/slots'
+import { NodeJsonStore } from './nodeJsonStore'
+import { registerSettingsIpc } from './settings'
 
 /**
  * Electron main process. All I/O lives on this side of the bridge — fetch
@@ -64,6 +67,7 @@ const SITE = process.env.SCHED_SITE ?? 'https://comiccon2026.sched.com'
 let store: SnapshotStore
 let stars: StarStore
 let keys: KeyStore
+let settings: SettingsSlots
 let canonicalEventCache: readonly ScheduleEvent[] = []
 let refreshDependencies: RefreshDependencies
 
@@ -117,6 +121,7 @@ function registerIpc(): void {
   // the canonical-event resolver so neither has to reach for renderer state.
   registerStarIpc(ipcMain, stars)
   registerIcsIpc(ipcMain, canonicalEvents)
+  registerSettingsIpc(ipcMain, settings)
 
   // The chat concierge: the key store never leaves main, and the tool loop
   // reads the same canonical events the export does.
@@ -139,6 +144,7 @@ app.whenReady().then(async () => {
   store = new SnapshotStore(app.getPath('userData'))
   stars = new StarStore(app.getPath('userData'))
   keys = new KeyStore(app.getPath('userData'), safeStorage)
+  settings = new SettingsSlots(new NodeJsonStore(join(app.getPath('userData'), 'schedule')))
   refreshDependencies = {
     site: SITE,
     slots: store,

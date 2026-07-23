@@ -1,5 +1,6 @@
 /**
- * The I/O half of ICS export: resolve UIDs, pick a path, write the file.
+ * Electron's thin ICS adapter: the shared core resolves UIDs and builds the
+ * calendar; this module owns only the save dialog, filesystem write, and IPC.
  *
  * The renderer sends `{uids, options}` and nothing else. Main resolves those
  * UIDs against its own canonical dataset, which is the whole point — an export
@@ -12,24 +13,13 @@
  */
 
 import { writeFile } from 'node:fs/promises'
-import { buildIcs } from '../shared/ics'
-import type { IcsExclusion } from '../shared/ics'
+import { defaultFileName, exportIcs as exportPortableIcs } from '../shared/ics'
+import type { IcsExportDeps } from '../shared/ics'
 import type { IcsExportRequest, IcsExportResult } from '../shared/bridge/types'
 import type { ScheduleEvent } from '../shared/schedule'
 
-export type { IcsExportRequest, IcsExportResult } from '../shared/bridge/types'
-
-export interface IcsExportDeps {
-  /** Delivers the file through the platform UI. Resolves to null on cancel. */
-  deliver(defaultName: string, contents: string): Promise<string | null>
-}
-
-/** Suggested filename: `comic-con-2026-07-25.ics`, or `comic-con.ics` for the
- *  whole con. Distinct per day so a day export never silently overwrites the
- *  previous one in the Downloads folder. */
-export function defaultFileName(day?: string): string {
-  return day ? `comic-con-${day}.ics` : 'comic-con.ics'
-}
+export { defaultFileName }
+export type { IcsExportDeps, IcsExportRequest, IcsExportResult }
 
 const electronDeps: IcsExportDeps = {
   deliver: async (defaultName, contents) => {
@@ -52,45 +42,7 @@ export async function exportIcs(
   getEvents: () => readonly ScheduleEvent[],
   deps: IcsExportDeps = electronDeps
 ): Promise<IcsExportResult> {
-  const byUid = new Map(getEvents().map((event) => [event.uid, event]))
-
-  const resolved: ScheduleEvent[] = []
-  const ghosts: IcsExclusion[] = []
-  for (const uid of request.uids) {
-    const event = byUid.get(uid)
-    if (event) resolved.push(event)
-    // A star whose event has left the dataset entirely. Reported like any other
-    // exclusion so a shrinking export is always explained.
-    else ghosts.push({ uid, title: null, reason: 'not-found' })
-  }
-
-  const built = buildIcs(resolved, request.options)
-  const excluded = [...ghosts, ...built.excluded]
-
-  // Nothing to write beats an empty calendar file the user has to delete.
-  if (built.exported === 0) return { status: 'empty', path: null, exported: 0, excluded }
-
-  let path: string | null
-  try {
-    path = await deps.deliver(defaultFileName(request.options?.day), built.ics)
-  } catch (error) {
-    return {
-      status: 'failed',
-      path: null,
-      exported: 0,
-      excluded: [],
-      message: error instanceof Error ? error.message : String(error)
-    }
-  }
-  if (!path) return { status: 'cancelled', path: null, exported: 0, excluded: [] }
-
-  return {
-    status: 'saved',
-    path,
-    exported: built.exported,
-    excluded,
-    sanitized: built.sanitized
-  }
+  return exportPortableIcs(request, getEvents, deps)
 }
 
 /** Minimal shape of the `ipcMain` this needs, so wiring it up in tests does not

@@ -1,14 +1,13 @@
 import type { PlatformBridge } from '@shared/bridge/types'
+import { webBridge } from './bridge/web'
 
 let testBridge: PlatformBridge | null | undefined
 
-/**
- * The renderer's only platform lookup. U6 supplies the web fallback; until
- * then a renderer outside Electron keeps today's null-safe empty behavior.
- */
+/** The renderer's only platform lookup. Explicit test override wins, then the
+ * Electron preload when present, then the singleton browser implementation. */
 export function bridge(): PlatformBridge | null {
   if (testBridge !== undefined) return testBridge
-  return typeof window !== 'undefined' && window.api ? window.api : null
+  return typeof window !== 'undefined' && window.api ? window.api : webBridge()
 }
 
 /** Test seam used by the typed fake-bridge helper. Production code must only

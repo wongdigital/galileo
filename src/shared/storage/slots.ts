@@ -9,6 +9,7 @@ export type SnapshotSlot = 'last-known-good' | 'last-fetched'
 const CHANGE_LOG_NAME = 'unseen-changes.json'
 const STAR_PRIMARY_NAME = 'stars.json'
 const STAR_BACKUP_NAME = 'stars.backup.json'
+const SETTINGS_NAME = 'settings.json'
 
 /** Schema-aware schedule artifacts over platform-neutral durable JSON. */
 export class SnapshotSlots {
@@ -74,6 +75,32 @@ export class StarSlots {
   }
 }
 
+/** Small named values shared by renderer state across launches. The whole
+ * artifact is serialized through one queue so concurrent setting writes do
+ * not overwrite one another with stale read-modify-write snapshots. */
+export class SettingsSlots {
+  private writes: Promise<void> = Promise.resolve()
+
+  constructor(private readonly store: JsonStore) {}
+
+  async get(name: string): Promise<unknown | null> {
+    validateSettingName(name)
+    await this.writes.catch(() => {})
+    const values = asSettings(await this.store.read(SETTINGS_NAME))
+    return Object.hasOwn(values, name) ? values[name] : null
+  }
+
+  set(name: string, value: unknown): Promise<void> {
+    validateSettingName(name)
+    const operation = this.writes.catch(() => {}).then(async () => {
+      const values = asSettings(await this.store.read(SETTINGS_NAME))
+      await this.store.replace(SETTINGS_NAME, { ...values, [name]: value })
+    })
+    this.writes = operation
+    return operation
+  }
+}
+
 function starsFromGeneration(raw: unknown): StarRecord[] {
   // Star schemas are deliberately tolerant. A version bump must not discard
   // a user's irrecoverable list; normalize the scalar records we understand.
@@ -81,4 +108,13 @@ function starsFromGeneration(raw: unknown): StarRecord[] {
     return normalizeStars((raw as Partial<StarFile>).stars ?? raw)
   }
   return normalizeStars(raw)
+}
+
+function validateSettingName(name: string): void {
+  if (!/^[a-z][a-z0-9._-]{0,63}$/i.test(name)) throw new Error(`Invalid settings name: ${name}`)
+}
+
+function asSettings(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  return raw as Record<string, unknown>
 }

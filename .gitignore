@@ -22,6 +22,7 @@ data/review-bucket.json
 # --- Node / build ---
 node_modules/
 dist/
+dist-web/
 out/
 *.log
 *.tsbuildinfo
