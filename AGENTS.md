@@ -1,18 +1,22 @@
 # AGENTS.md
 
-Instructions for Codex and other coding agents working in Galileo—an Electron app for browsing
-the San Diego Comic-Con program schedule. React 19, TypeScript, Vite via electron-vite,
-Tailwind v4. AGPL-3.0.
+Instructions for Codex and other coding agents working in Galileo—an Electron desktop and
+Capacitor iPad app for browsing the San Diego Comic-Con program schedule. React 19,
+TypeScript, Vite, Tailwind v4. AGPL-3.0.
 
 ## Commands
 
 ```sh
 npm run dev        # launch the app
+npm run dev:web    # launch the browser runtime
 npm run typecheck  # tsc --build --force (run this, not `tsc` bare)
 npm test           # vitest run
 npm run lint       # eslint-plugin-jsx-a11y (strict) over renderer TSX — a11y gate only
 npm run fetch      # pull today's schedule from Sched into data/
 npm run build      # electron-vite build
+npm run build:web  # build the portable browser/Capacitor payload into dist-web/
+npm run ios:sync   # build the web payload and sync the committed iOS project
+npm run ios:open   # open the iOS project in Xcode
 ```
 
 Typecheck and tests both need to pass before anything is considered done.
@@ -31,25 +35,34 @@ What *is* committed under `data/` is the derived index and the hand-curated tabl
 `enrichment.json` (extracted people and franchise ids), `facet-map.json`, `aliases.json`,
 `franchise-seed.json`. These are facts about the schedule, not Sched's prose.
 
+The web and mobile bundles ship that enrichment only. They must never contain
+`events.json`, `meta.json`, or another copy of Sched-authored program prose; every installed
+app fetches its own schedule at runtime.
+
 If a change makes it *convenient* to commit fetched data, the change is wrong. See README for
 the full table of what is and isn't committed.
 
 ## Architecture
 
 ```
-src/main/      Electron main process. All I/O lives here—fs, network, safeStorage, IPC handlers.
-src/preload/   The bridge. Channel definitions only.
-src/renderer/  React app. Sandboxed; never gets node or fs access.
-src/shared/    Pure logic, imported by all three.
+src/main/                  Electron main process and desktop I/O adapters.
+src/preload/               Electron bridge exposure; channel definitions only.
+src/renderer/              Shared React app; sandboxed, with no Node or filesystem access.
+src/renderer/src/bridge/   Browser and Capacitor adapters behind PlatformBridge.
+src/shared/                Pure orchestration and domain logic imported by every host.
+ios/                       Committed Capacitor iPad shell using Swift Package Manager.
 ```
 
 **`src/shared/` is pure.** No `node:` imports, no `electron` imports, no React, no I/O. This
 is the constraint that keeps the renderer's sandbox from ever needing to be relaxed, and it's
 what makes the schedule/filter/graph logic testable without a browser or an Electron host.
-The `npm run fetch` CLI is a thin wrapper over `src/shared/schedule/`, so the CLI and the app
-cannot drift.
+Network and storage enter shared orchestration through injected structural interfaces; the
+`npm run fetch` CLI is a thin wrapper over `src/shared/schedule/`, so the CLI and every app
+host cannot drift.
 
-LLM API keys live in main behind `safeStorage` and never cross to the renderer.
+LLM API keys live behind the platform bridge: Electron encrypts them at rest with
+`safeStorage`; iOS stores them in Keychain and exposes one to JavaScript only for the provider
+call that needs it. The plain browser runtime keeps keys in memory for the current session.
 
 Both tsconfigs run `strict` plus `noUncheckedIndexedAccess`—indexed access yields `T |
 undefined`, so expect to narrow or `!` deliberately rather than by habit.
