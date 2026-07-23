@@ -2,8 +2,8 @@
  * Live evals — the concierge against a real model, not a mock.
  *
  * NOT part of the normal suite: non-deterministic, costs money, needs secrets.
- * Gated twice — `RUN_LIVE=1` AND a provider key — so `npm test` and CI load
- * this file, see the gate, and skip every case at zero cost.
+ * Gated twice — `RUN_LIVE=1` AND a provider key — and invoked only through
+ * `npm run test:live`, so the normal suite never spends money or touches I/O.
  *
  *   npm run test:live            # runs whichever providers have keys in .env
  *
@@ -25,8 +25,8 @@ import { join } from 'node:path'
 import { generateText } from 'ai'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { describe, expect, it } from 'vitest'
-import { runChatTurn } from '../loop'
-import { DEFAULT_MODEL } from '../providers'
+import { runChatTurn } from '../../../shared/llm/loop'
+import { DEFAULT_MODEL } from '../../../shared/llm/providers'
 import { EMPTY_FILTER, type FilterCandidate } from '../../../shared/filter/types'
 import type { ChatRequest, ProviderId } from '../../../shared/chat'
 import type { ScheduleEvent } from '../../../shared/schedule'
@@ -122,7 +122,12 @@ const CORPUS_FACTS = `The dataset contains EXACTLY these 4 events, on four diffe
 Days present: Thu Jul 23, Fri Jul 24, Sat Jul 25, Sun Jul 26. The ONLY Hall H event is e3, the Marvel panel on Saturday. There is no Pokemon; franchises are only Star Wars and Marvel.`
 
 function makeDeps(key: string, candidates: readonly FilterCandidate[] = CANDIDATES, events: readonly ScheduleEvent[] = EVENTS) {
-  return { keyStore: { get: () => key }, getEvents: () => events, getCandidates: () => candidates }
+  return {
+    keyStore: { get: async () => key },
+    getEvents: () => events,
+    getCandidates: () => candidates,
+    fetchImpl: fetch,
+  }
 }
 
 function request(provider: ProviderId, content: string, model?: string): ChatRequest {
@@ -292,7 +297,7 @@ for (const provider of ['anthropic', 'openai', 'openrouter'] as ProviderId[]) {
     }, TIMEOUT)
 
     it('reports a rejected key as an error, not a hang', async () => {
-      const badDeps = { ...deps, keyStore: { get: () => 'sk-definitely-invalid-000' } }
+      const badDeps = { ...deps, keyStore: { get: async () => 'sk-definitely-invalid-000' } }
       const res = await runChatTurn(badDeps, request(provider, 'hello', CHEAP_MODEL[provider]))
       expect(res.ok).toBe(false)
       if (res.ok) return

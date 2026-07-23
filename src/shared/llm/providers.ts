@@ -12,7 +12,11 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import type { LanguageModel } from 'ai'
-import { DEFAULT_MODEL, type ProviderId } from '../../shared/chat'
+import { DEFAULT_MODEL, type ProviderId } from '../chat'
+import type { ChatFetch } from './transport'
+
+// Shared stays pure because every provider client receives its network transport;
+// this module never reaches for ambient fetch or performs I/O on its own.
 
 // The overridable per-provider defaults live in the shared catalogue so main
 // and the tab agree on them; re-exported here for the callers that reach for
@@ -23,14 +27,20 @@ export function languageModel(
   provider: ProviderId,
   apiKey: string,
   model?: string,
+  fetchImpl?: ChatFetch,
 ): LanguageModel {
+  if (!fetchImpl) throw new Error('A provider transport is required.')
   const id = model?.trim() || DEFAULT_MODEL[provider]
   switch (provider) {
     case 'anthropic':
-      return createAnthropic({ apiKey })(id)
+      return createAnthropic({
+        apiKey,
+        fetch: fetchImpl,
+        headers: { 'anthropic-dangerous-direct-browser-access': 'true' },
+      })(id)
     case 'openai':
-      return createOpenAI({ apiKey })(id)
+      return createOpenAI({ apiKey, fetch: fetchImpl })(id)
     case 'openrouter':
-      return createOpenRouter({ apiKey })(id)
+      return createOpenRouter({ apiKey, fetch: fetchImpl })(id)
   }
 }

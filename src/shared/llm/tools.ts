@@ -14,13 +14,13 @@
 
 import { tool } from 'ai'
 import { z } from 'zod'
-import { applyFilter, describeFilter, facetOptions } from '../../shared/filter/engine'
-import { facetValueLabel } from '../../shared/filter/labels'
-import { EMPTY_FILTER, type FilterCandidate, type FilterChip, type FilterState, type MatchContext } from '../../shared/filter/types'
-import { applyFilterIntent, resolveFacetValue } from '../../shared/chat'
-import type { AppStatePatch, EventSummary, ProposedAction, ViewName } from '../../shared/chat'
-import type { LensId } from '../../shared/graph/types'
-import type { ScheduleEvent } from '../../shared/schedule'
+import { applyFilter, describeFilter, facetOptions } from '../filter/engine'
+import { facetValueLabel } from '../filter/labels'
+import { EMPTY_FILTER, type FilterCandidate, type FilterChip, type FilterState, type MatchContext } from '../filter/types'
+import { applyFilterIntent, resolveFacetValue } from '../chat'
+import type { AppStatePatch, EventSummary, ProposedAction, ViewName } from '../chat'
+import type { LensId } from '../graph/types'
+import type { ScheduleEvent } from '../schedule'
 
 export interface ToolContext {
   /** The filter index, synced from the renderer. Empty until the first sync. */

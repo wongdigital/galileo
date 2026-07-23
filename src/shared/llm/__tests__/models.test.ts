@@ -1,3 +1,4 @@
+// Model catalogue behavior belongs to the platform-neutral LLM core.
 import { describe, expect, it, vi } from 'vitest'
 import { listModels } from '../models'
 
@@ -34,7 +35,10 @@ describe('listModels', () => {
     expect(models).toEqual([{ id: 'claude-sonnet-5', label: 'Claude Sonnet 5' }])
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://api.anthropic.com/v1/models?limit=100',
-      expect.objectContaining({ headers: expect.objectContaining({ 'x-api-key': 'sk-ant' }) }),
+      expect.objectContaining({ headers: expect.objectContaining({
+        'x-api-key': 'sk-ant',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      }) }),
     )
   })
 
@@ -61,5 +65,23 @@ describe('listModels', () => {
   it('swallows a network error into an empty list', async () => {
     const fetchImpl = vi.fn(() => Promise.reject(new Error('offline')))
     expect(await listModels('openrouter', undefined, fetchImpl as never)).toEqual([])
+  })
+
+  it('falls back from a CORS-shaped streaming fetch failure to the buffered request', async () => {
+    const streamFetch = vi.fn(() => Promise.reject(new TypeError('Failed to fetch')))
+    const bufferedRequest = vi.fn(() => ok({ data: [{ id: 'anthropic/claude', name: 'Claude' }] }))
+    await expect(listModels('openrouter', undefined, { streamFetch, bufferedRequest } as never)).resolves.toEqual([
+      { id: 'anthropic/claude', label: 'Claude' },
+    ])
+    expect(streamFetch).toHaveBeenCalledOnce()
+    expect(bufferedRequest).toHaveBeenCalledOnce()
+  })
+
+  it('returns an empty list when both catalogue transports fail', async () => {
+    const transport = {
+      streamFetch: vi.fn(() => Promise.reject(new TypeError('Load failed'))),
+      bufferedRequest: vi.fn(() => Promise.reject(new Error('native offline'))),
+    }
+    await expect(listModels('openrouter', undefined, transport as never)).resolves.toEqual([])
   })
 })

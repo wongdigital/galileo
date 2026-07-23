@@ -95,7 +95,9 @@ export function KeySetup({
     }
   }
 
-  const saved = keyStatus?.[provider] ?? false
+  const state = keyStatus?.[provider]
+  const saved = state === 'present'
+  const unreadable = state === 'unreadable'
 
   return (
     <div className="flex flex-col gap-3">
@@ -112,7 +114,7 @@ export function KeySetup({
             {PROVIDERS.map((p) => (
               <option key={p} value={p}>
                 {PROVIDER_LABEL[p]}
-                {keyStatus?.[p] ? ' •' : ''}
+                {keyStatus?.[p] === 'present' ? ' •' : keyStatus?.[p] === 'unreadable' ? ' ◌' : ''}
               </option>
             ))}
           </select>
@@ -166,10 +168,11 @@ export function KeySetup({
         <span className="text-[11px] text-ink-faint">API key</span>
         <input
           type="password"
+          disabled={unreadable}
           value={draftKeys[provider] ?? ''}
           onChange={(e) => setDraftKeys((prev) => ({ ...prev, [provider]: e.target.value }))}
-          placeholder={saved ? `${PROVIDER_LABEL[provider]} key saved — enter to replace` : `${PROVIDER_LABEL[provider]} API key`}
-          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-faint focus:border-lumen-dim focus:outline-none"
+          placeholder={unreadable ? `${PROVIDER_LABEL[provider]} key is temporarily unavailable` : saved ? `${PROVIDER_LABEL[provider]} key saved — enter to replace` : `${PROVIDER_LABEL[provider]} API key`}
+          className="rounded-md border border-line bg-ground-850 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-ink-faint focus:border-lumen-dim focus:outline-none disabled:opacity-60"
         />
       </label>
 

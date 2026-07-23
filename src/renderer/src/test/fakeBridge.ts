@@ -47,18 +47,18 @@ export function installFakeBridge(overrides: FakeBridgeOverrides = {}): FakePlat
     },
     llm: {
       keyStatus: vi.fn<PlatformBridge['llm']['keyStatus']>(async () => ({
-        anthropic: false,
-        openai: false,
-        openrouter: false,
+        anthropic: 'absent',
+        openai: 'absent',
+        openrouter: 'absent',
       })),
       setKey: vi.fn<PlatformBridge['llm']['setKey']>(async () => ({
         ok: false,
         message: 'not configured',
       })),
       clearKey: vi.fn<PlatformBridge['llm']['clearKey']>(async () => ({
-        anthropic: false,
-        openai: false,
-        openrouter: false,
+        anthropic: 'absent',
+        openai: 'absent',
+        openrouter: 'absent',
       })),
       models: vi.fn<PlatformBridge['llm']['models']>(async () => []),
       syncDataset: vi.fn<PlatformBridge['llm']['syncDataset']>(async (candidates) => ({

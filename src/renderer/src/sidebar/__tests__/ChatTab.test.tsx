@@ -64,11 +64,11 @@ let api: FakePlatformBridge
 
 beforeEach(() => {
   persisted = []
-  keyStatus = { anthropic: true, openai: false, openrouter: false }
+  keyStatus = { anthropic: 'present', openai: 'absent', openrouter: 'absent' }
   chat = vi.fn<PlatformBridge['llm']['chat']>()
   syncDataset = vi.fn<PlatformBridge['llm']['syncDataset']>().mockResolvedValue({ received: 2 })
   setKey = vi.fn<PlatformBridge['llm']['setKey']>((provider) =>
-    Promise.resolve({ ok: true, status: { ...keyStatus, [provider]: true } }),
+    Promise.resolve({ ok: true, status: { ...keyStatus, [provider]: 'present' } }),
   )
   api = installFakeBridge({
     schedule: { refresh: vi.fn().mockResolvedValue(projection()) },
@@ -148,7 +148,7 @@ async function sendMessage(text: string) {
 
 describe('ChatTab', () => {
   it('opens setup and disables the composer when no key is stored', async () => {
-    keyStatus = { anthropic: false, openai: false, openrouter: false }
+    keyStatus = { anthropic: 'absent', openai: 'absent', openrouter: 'absent' }
     render(
       <SpineProvider>
         <ChatTab />
@@ -160,7 +160,7 @@ describe('ChatTab', () => {
   })
 
   it('remembers a draft key for one provider while entering another', async () => {
-    keyStatus = { anthropic: false, openai: false, openrouter: false }
+    keyStatus = { anthropic: 'absent', openai: 'absent', openrouter: 'absent' }
     render(
       <SpineProvider>
         <ChatTab />
@@ -316,6 +316,28 @@ describe('ChatTab', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy()
   })
 
+  it('keeps an interrupted partial reply visible without applying its mutation effects', async () => {
+    chat.mockResolvedValue({
+      ok: true,
+      turn: {
+        interrupted: true,
+        message: { role: 'assistant', content: 'Partial answer' },
+        patch: { filter: HORROR_FILTER },
+        proposedAction: { kind: 'star', events: [] },
+        eventUids: [],
+        toolTrace: [],
+      },
+    })
+    await mount()
+    await sendMessage('start a long answer')
+
+    await waitFor(() => expect(screen.getByText('Partial answer')).toBeTruthy())
+    expect(screen.getByText('Interrupted')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Resend' })).toBeTruthy()
+    expect(screen.getByTestId('chips').textContent).toBe('')
+    expect(screen.queryByRole('button', { name: /Star/ })).toBeNull()
+  })
+
   it('names an empty reply instead of rendering a blank bubble', async () => {
     chat.mockResolvedValue({
       ok: true,
@@ -409,6 +431,52 @@ describe('ChatTab', () => {
     // The partial stays on screen, with the error banner above it — not spliced.
     expect(screen.getByText('Partial answer so far')).toBeTruthy()
     expect(screen.getByText(/timed out/)).toBeTruthy()
+  })
+
+  it('marks an interrupted partial and resends without replaying it as history', async () => {
+    chat
+      .mockResolvedValueOnce({
+        ok: true,
+        turn: {
+          message: { role: 'assistant', content: 'Partial answer' },
+          interrupted: true,
+          eventUids: [],
+          toolTrace: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        turn: { message: { role: 'assistant', content: 'Complete answer' }, eventUids: [], toolTrace: [] },
+      })
+    await mount()
+    await sendMessage('try this')
+
+    expect(await screen.findByText('Interrupted')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Resend' }))
+    await waitFor(() => expect(chat).toHaveBeenCalledTimes(2))
+    const retry = chat.mock.calls[1]![0]
+    expect(retry.messages).toEqual([{ role: 'user', content: 'try this' }])
+    expect(await screen.findByText('Complete answer')).toBeTruthy()
+  })
+
+  it('does not prompt replacement when a stored key is temporarily unreadable', async () => {
+    keyStatus = { anthropic: 'unreadable', openai: 'absent', openrouter: 'absent' }
+    await mount()
+    expect(screen.queryByText('Model & keys')).toBeNull()
+    expect((screen.getByPlaceholderText('API key temporarily unavailable') as HTMLTextAreaElement).disabled).toBe(true)
+  })
+
+  it('disables chat when the selected provider is unreadable even if another key is present', async () => {
+    keyStatus = { anthropic: 'present', openai: 'unreadable', openrouter: 'absent' }
+    await mount()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Model and API keys' }))
+    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openai' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    const composer = await screen.findByPlaceholderText('API key temporarily unavailable') as HTMLTextAreaElement
+    expect(composer.disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('commits a lens patch through the spine', async () => {

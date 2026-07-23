@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildTools, type ToolContext, type TurnCapture } from '../tools'
-import { EMPTY_FILTER, type FilterCandidate, type MatchContext } from '../../../shared/filter/types'
-import type { ScheduleEvent } from '../../../shared/schedule'
+import { EMPTY_FILTER, type FilterCandidate, type MatchContext } from '../../filter/types'
+import type { ScheduleEvent } from '../../schedule'
 
 // `ip` values are canonical slugs, exactly as the enrichment index stores them —
 // the tools must resolve the model's spoken "Star Wars" onto them and label

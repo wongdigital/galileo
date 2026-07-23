@@ -12,7 +12,8 @@
  * include a Custom escape hatch. `fetch` is injectable for tests.
  */
 
-import type { ModelChoice, ProviderId } from '../../shared/chat'
+import type { ModelChoice, ProviderId } from '../chat'
+import { isCorsLikeError, type ChatTransport } from './transport'
 
 interface FetchResponse {
   ok: boolean
@@ -69,10 +70,12 @@ function normalizeOpenRouter(body: unknown): ModelChoice[] {
 
 export async function listModels(
   provider: ProviderId,
-  apiKey?: string,
-  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+  apiKey: string | undefined,
+  transport: FetchLike | ChatTransport,
 ): Promise<ModelChoice[]> {
-  try {
+  const primary = typeof transport === 'function' ? transport : (transport.streamFetch as unknown as FetchLike)
+  const fallback = typeof transport === 'function' ? null : (transport.bufferedRequest as unknown as FetchLike)
+  const load = async (fetchImpl: FetchLike): Promise<ModelChoice[]> => {
     // Exhaustive over ProviderId with no default, so a new provider fails to
     // compile here instead of silently falling through to an OpenAI query.
     switch (provider) {
@@ -81,15 +84,17 @@ export async function listModels(
         return res.ok ? normalizeOpenRouter(await res.json()) : []
       }
       case 'anthropic': {
-        // Cannot list without the key.
         if (!apiKey) return []
         const res = await fetchImpl('https://api.anthropic.com/v1/models?limit=100', {
-          headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
         })
         return res.ok ? normalizeAnthropic(await res.json()) : []
       }
       case 'openai': {
-        // Cannot list without the key.
         if (!apiKey) return []
         const res = await fetchImpl('https://api.openai.com/v1/models', {
           headers: { Authorization: `Bearer ${apiKey}` },
@@ -97,7 +102,17 @@ export async function listModels(
         return res.ok ? normalizeOpenAI(await res.json()) : []
       }
     }
-  } catch {
+  }
+  try {
+    return await load(primary)
+  } catch (error) {
+    if (fallback && fallback !== primary && isCorsLikeError(error)) {
+      try {
+        return await load(fallback)
+      } catch {
+        return []
+      }
+    }
     // Offline or a malformed body: defer to the renderer's curated fallback.
     return []
   }

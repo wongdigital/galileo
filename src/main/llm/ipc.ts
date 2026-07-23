@@ -1,48 +1,10 @@
-/**
- * The chat tab's IPC surface. Follows the self-registering
- * `register*Ipc(ipcMain, deps)` pattern the star and export channels use, so
- * this module never imports `electron` and stays unit-testable against a
- * Map-backed fake ipcMain.
- *
- * The candidate index lives here as closure state: the renderer syncs it
- * (`llm:dataset:sync`) whenever its identity-stable candidate array changes —
- * rarely, on refresh — and every chat turn reads the last synced copy. Keeping
- * it in main means the tool loop grounds counts and searches without the
- * renderer shipping 3,474 events on every message.
- */
+/** Electron's thin chat host: channel registration and sender delta plumbing.
+ * Validation, inflight state, timeout, keys, models, and transport fallback all
+ * live in the platform-neutral shared session. */
 
-import { runChatTurn } from './loop'
-import { listModels } from './models'
-import type { KeyStore } from './keyStore'
-import { PROVIDERS } from '../../shared/chat'
-import type { ChatRequest, ChatResponse, ProviderId } from '../../shared/chat'
-import type { FilterCandidate } from '../../shared/filter/types'
 import type { ScheduleEvent } from '../../shared/schedule'
+import { createChatSession, type ChatSession, type ChatTransport, type KeyStore } from '../../shared/llm'
 
-/** The renderer's payloads cross an untyped IPC boundary; a compromised or buggy
- *  renderer could send anything. Validate the provider is one we know before it
- *  reaches the key store or a provider fetch. */
-function isProviderId(value: unknown): value is ProviderId {
-  return typeof value === 'string' && (PROVIDERS as readonly string[]).includes(value)
-}
-
-/** Minimal shape check for a chat request — enough to keep a malformed payload
- *  from reaching the tool loop as a structured error rather than a raw throw. */
-function isChatRequest(value: unknown): value is ChatRequest {
-  if (!value || typeof value !== 'object') return false
-  const req = value as Record<string, unknown>
-  if (!isProviderId(req.provider)) return false
-  if (!Array.isArray(req.messages)) return false
-  return req.messages.every((m) => {
-    if (!m || typeof m !== 'object') return false
-    const msg = m as Record<string, unknown>
-    return (msg.role === 'user' || msg.role === 'assistant') && typeof msg.content === 'string'
-  })
-}
-
-const MALFORMED: ChatResponse = { ok: false, error: { kind: 'provider', message: 'malformed request' } }
-
-/** Minimal `ipcMain`, typed structurally to keep `electron` out of the module. */
 export interface LlmIpcHost {
   handle(channel: string, listener: (event: unknown, ...args: unknown[]) => unknown): void
 }
@@ -50,89 +12,46 @@ export interface LlmIpcHost {
 export interface LlmIpcDeps {
   keyStore: KeyStore
   getEvents: () => readonly ScheduleEvent[]
+  transport?: ChatTransport
+  session?: ChatSession
 }
 
-/** A turn that reaches this without answering is stuck; abort it and surface a
- *  clear timeout rather than a spinner that never stops. Generous, because a
- *  multi-step tool loop on a large model legitimately takes a while. */
-const CHAT_TIMEOUT_MS = 90_000
-
-export function registerLlmIpc(ipcMain: LlmIpcHost, deps: LlmIpcDeps): void {
-  let candidates: readonly FilterCandidate[] = []
-  let inflight: AbortController | null = null
-
-  ipcMain.handle('llm:key:status', () => deps.keyStore.status())
-
-  ipcMain.handle('llm:key:set', (_event, ...args: unknown[]) => {
-    const { provider, key } = (args[0] ?? {}) as { provider: unknown; key: string }
-    if (!isProviderId(provider)) return { ok: false as const, message: 'unknown provider' }
-    try {
-      return { ok: true as const, status: deps.keyStore.set(provider, key) }
-    } catch (error) {
-      return { ok: false as const, message: error instanceof Error ? error.message : String(error) }
-    }
+export function registerLlmIpc(ipcMain: LlmIpcHost, dependencies: LlmIpcDeps): void {
+  const session = dependencies.session ?? createChatSession({
+    keys: dependencies.keyStore,
+    getEvents: dependencies.getEvents,
+    transport: dependencies.transport ?? { streamFetch: fetch, bufferedRequest: fetch },
   })
+  let releaseSender: (() => void) | null = null
 
-  ipcMain.handle('llm:key:clear', (_event, ...args: unknown[]) => {
-    const { provider } = (args[0] ?? {}) as { provider: unknown }
-    // An unknown provider is a no-op: report the current status unchanged.
-    if (!isProviderId(provider)) return deps.keyStore.status()
-    return deps.keyStore.clear(provider)
+  ipcMain.handle('llm:key:status', () => session.keyStatus())
+  ipcMain.handle('llm:key:set', (_event, payload: unknown) => {
+    const { provider, key } = (payload ?? {}) as { provider?: unknown; key?: unknown }
+    return session.setKey(provider, key)
   })
-
-  ipcMain.handle('llm:models', (_event, ...args: unknown[]) => {
-    const provider = args[0]
-    if (!isProviderId(provider)) return []
-    // OpenRouter lists publicly; the other two need the stored key.
-    return listModels(provider, deps.keyStore.get(provider) ?? undefined)
+  ipcMain.handle('llm:key:clear', (_event, payload: unknown) => {
+    const { provider } = (payload ?? {}) as { provider?: unknown }
+    return session.clearKey(provider)
   })
-
-  ipcMain.handle('llm:dataset:sync', (_event, ...args: unknown[]) => {
-    const next = args[0]
-    candidates = Array.isArray(next) ? (next as FilterCandidate[]) : []
-    return { received: candidates.length }
-  })
-
-  ipcMain.handle('llm:chat', async (event, ...args: unknown[]): Promise<ChatResponse> => {
-    // Reject a malformed payload before it supersedes a live turn or reaches the
-    // loop as an unstructured throw.
-    if (!isChatRequest(args[0])) return MALFORMED
-    // One turn in flight per window; a new send supersedes any prior straggler.
-    inflight?.abort(new Error('superseded'))
-    const controller = new AbortController()
-    inflight = controller
-    const timeout = setTimeout(() => controller.abort(new Error('timeout')), CHAT_TIMEOUT_MS)
-    // Stream text/status back to the sender as it happens.
+  ipcMain.handle('llm:models', (_event, provider: unknown) => session.models(provider))
+  ipcMain.handle('llm:dataset:sync', (_event, candidates: unknown) => session.syncDataset(candidates))
+  ipcMain.handle('llm:chat', async (event, request: unknown) => {
     const sender = (event as { sender?: { send(channel: string, ...payload: unknown[]): void } }).sender
+    // Supersede the sender subscription in lockstep with the session turn. A
+    // prior pending IPC promise must not remain subscribed to the new turn.
+    releaseSender?.()
+    const unsubscribe = sender
+      ? session.onDelta((delta) => sender.send('llm:chat:delta', delta))
+      : () => {}
+    releaseSender = unsubscribe
     try {
-      return await runChatTurn(
-        {
-          keyStore: deps.keyStore,
-          getEvents: deps.getEvents,
-          getCandidates: () => candidates,
-          signal: controller.signal,
-          // Guard on this turn's own controller so a superseded straggler cannot
-          // stream deltas into the window a newer turn now owns.
-          onDelta: sender
-            ? (delta) => {
-                if (!controller.signal.aborted) sender.send('llm:chat:delta', delta)
-              }
-            : undefined,
-        },
-        args[0],
-      )
-    } catch (error) {
-      // No unstructured IPC rejection should escape; surface it as a provider
-      // error the tab renders in place.
-      return { ok: false, error: { kind: 'provider', message: error instanceof Error ? error.message : String(error) } }
+      return await session.chat(request)
     } finally {
-      clearTimeout(timeout)
-      if (inflight === controller) inflight = null
+      if (releaseSender === unsubscribe) {
+        unsubscribe()
+        releaseSender = null
+      }
     }
   })
-
-  ipcMain.handle('llm:chat:cancel', () => {
-    inflight?.abort(new Error('cancelled'))
-    return { cancelled: true }
-  })
+  ipcMain.handle('llm:chat:cancel', () => session.cancel())
 }

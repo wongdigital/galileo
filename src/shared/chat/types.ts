@@ -120,6 +120,9 @@ export interface ChatDelta {
 /** The whole result of one user turn, handed back across the bridge. */
 export interface ChatTurn {
   message: ChatMessage
+  /** The provider stopped after producing useful prose. Partial text remains
+   * visible, but app-facing effects from the incomplete step are discarded. */
+  interrupted?: true
   /** Filter/lens/view to commit, if the model drove state this turn. */
   patch?: AppStatePatch
   /** Events to render as cards inline (from get_event / search results). */
@@ -147,7 +150,8 @@ export interface ChatRequest {
 
 /** Which providers currently have a stored key — drives the tab's enabled
  *  state and the key-entry surface without ever exposing the key itself. */
-export type KeyStatus = Record<ProviderId, boolean>
+export type KeyState = 'absent' | 'unreadable' | 'present'
+export type KeyStatus = Record<ProviderId, KeyState>
 
 /** A chat call can fail for reasons the tab must show in-place rather than
  *  throw: no key, a rejected key (401), a provider/network error, or a
@@ -155,6 +159,9 @@ export type KeyStatus = Record<ProviderId, boolean>
 export interface ChatError {
   kind: 'no-key' | 'auth' | 'provider' | 'aborted'
   message: string
+  /** Internal session hint: retry once through the injected buffered transport
+   * only when a direct stream failed before producing output. */
+  transport?: 'cors'
 }
 
 export type ChatResponse = { ok: true; turn: ChatTurn } | { ok: false; error: ChatError }

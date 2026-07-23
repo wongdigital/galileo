@@ -17,6 +17,7 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PROVIDERS, type KeyStatus, type ProviderId } from '../../shared/chat'
+import { base64ToBytes, bytesToBase64, type KeyStore as SharedKeyStore } from '../../shared/llm/keys'
 
 const FILE_NAME = 'llm-keys.json'
 
@@ -32,7 +33,7 @@ interface KeyFile {
   keys: Partial<Record<ProviderId, string>>
 }
 
-export class KeyStore {
+export class KeyStore implements SharedKeyStore {
   private readonly dir: string
   private readonly crypto: SafeStorage
 
@@ -43,10 +44,24 @@ export class KeyStore {
   }
 
   /** Which providers have a stored key — the only key fact the renderer sees. */
-  status(): KeyStatus {
+  async status(): Promise<KeyStatus> {
     const file = this.readFile()
     const status = {} as KeyStatus
-    for (const provider of PROVIDERS) status[provider] = typeof file.keys[provider] === 'string'
+    for (const provider of PROVIDERS) {
+      const encrypted = file.keys[provider]
+      if (!encrypted) {
+        status[provider] = 'absent'
+        continue
+      }
+      try {
+        this.crypto.decryptString(Buffer.from(base64ToBytes(encrypted)))
+        status[provider] = 'present'
+      } catch {
+        // Electron safeStorage failures are permanent credential mismatches,
+        // so the desktop mapping remains absent rather than transient unreadable.
+        status[provider] = 'absent'
+      }
+    }
     return status
   }
 
@@ -54,11 +69,11 @@ export class KeyStore {
    *  fails — a key sealed under a different OS credential (the app was copied to
    *  another machine) reads as "no key" so the tab prompts for a fresh one
    *  rather than throwing on every message. */
-  get(provider: ProviderId): string | null {
+  async get(provider: ProviderId): Promise<string | null> {
     const encrypted = this.readFile().keys[provider]
     if (!encrypted) return null
     try {
-      return this.crypto.decryptString(Buffer.from(encrypted, 'base64'))
+      return this.crypto.decryptString(Buffer.from(base64ToBytes(encrypted)))
     } catch {
       return null
     }
@@ -67,7 +82,7 @@ export class KeyStore {
   /** Store (or, with an empty string, delete) a provider's key. Throws only
    *  when the OS keychain is unavailable — storing a key in plaintext is not an
    *  acceptable fallback, so the caller surfaces the failure instead. */
-  set(provider: ProviderId, key: string): KeyStatus {
+  async set(provider: ProviderId, key: string): Promise<KeyStatus> {
     const trimmed = key.trim()
     const file = this.readFile()
     if (!trimmed) {
@@ -76,13 +91,13 @@ export class KeyStore {
       if (!this.crypto.isEncryptionAvailable()) {
         throw new Error('OS keychain is unavailable, so the API key cannot be stored securely.')
       }
-      file.keys[provider] = this.crypto.encryptString(trimmed).toString('base64')
+      file.keys[provider] = bytesToBase64(this.crypto.encryptString(trimmed))
     }
     this.writeFile(file)
     return this.status()
   }
 
-  clear(provider: ProviderId): KeyStatus {
+  async clear(provider: ProviderId): Promise<KeyStatus> {
     const file = this.readFile()
     delete file.keys[provider]
     this.writeFile(file)

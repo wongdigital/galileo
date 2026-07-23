@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { runChatTurn, type ChatDeps, type GenerateFn } from '../loop'
-import { EMPTY_FILTER, type FilterCandidate } from '../../../shared/filter/types'
-import type { ChatRequest } from '../../../shared/chat'
-import type { ScheduleEvent } from '../../../shared/schedule'
+import { EMPTY_FILTER, type FilterCandidate } from '../../filter/types'
+import type { ChatRequest } from '../../chat'
+import type { ScheduleEvent } from '../../schedule'
 
 const candidates: FilterCandidate[] = [
   { uid: 'a', dimensions: { genre: ['Horror'] }, haystack: 'panel a horror' },
@@ -38,7 +38,7 @@ const call = (input: unknown, tool: { execute?: unknown }): Promise<unknown> =>
 
 function deps(generate: GenerateFn, key: string | null = 'sk-test'): ChatDeps {
   return {
-    keyStore: { get: () => key },
+    keyStore: { get: async () => key },
     getEvents: () => events,
     getCandidates: () => candidates,
     generate,
@@ -106,6 +106,45 @@ describe('runChatTurn', () => {
       expect(res.error.kind).toBe('provider')
       expect(res.error.message).toMatch(/socket hang up/)
     }
+  })
+
+  it('keeps partial text but discards effects from an incomplete step', async () => {
+    const generate: GenerateFn = async ({ tools, onDelta }) => {
+      onDelta?.({ text: 'A partial answer' })
+      await call({ add: [{ dimension: 'genre', value: 'horror' }] }, tools.apply_filters)
+      throw new Error('stream disconnected')
+    }
+    const res = await runChatTurn(deps(generate), request)
+    expect(res).toMatchObject({
+      ok: true,
+      turn: {
+        message: { content: 'A partial answer' },
+        interrupted: true,
+        eventUids: [],
+        toolTrace: [],
+      },
+    })
+    if (res.ok) expect(res.turn.patch).toBeUndefined()
+  })
+
+  it('keeps effects from completed steps while discarding the interrupted step', async () => {
+    const generate: GenerateFn = async ({ tools, onDelta, onStepFinish }) => {
+      await call({ uid: 'a' }, tools.get_event)
+      onStepFinish?.()
+      await call({ add: [{ dimension: 'genre', value: 'horror' }] }, tools.apply_filters)
+      onDelta?.({ text: 'Partial after one complete step' })
+      throw new Error('stream disconnected')
+    }
+    const res = await runChatTurn(deps(generate), request)
+    expect(res).toMatchObject({
+      ok: true,
+      turn: {
+        interrupted: true,
+        eventUids: ['a'],
+        toolTrace: ['get_event'],
+      },
+    })
+    if (res.ok) expect(res.turn.patch).toBeUndefined()
   })
 
   it('reports a user Stop as aborted, not an error', async () => {

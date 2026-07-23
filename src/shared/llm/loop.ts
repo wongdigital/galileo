@@ -8,13 +8,15 @@
  * capture-and-assemble path is exercised without a provider or a key.
  */
 
-import { stepCountIs, streamText, type LanguageModel, type ModelMessage } from 'ai'
+import { generateText, stepCountIs, streamText, type LanguageModel, type ModelMessage } from 'ai'
 import { languageModel } from './providers'
 import { SYSTEM_PROMPT } from './systemPrompt'
 import { buildTools, type ChatTools, type ToolContext, type TurnCapture } from './tools'
-import type { FilterCandidate, MatchContext } from '../../shared/filter/types'
-import type { ChatDelta, ChatError, ChatRequest, ChatResponse } from '../../shared/chat'
-import type { ScheduleEvent } from '../../shared/schedule'
+import type { FilterCandidate, MatchContext } from '../filter/types'
+import type { ChatDelta, ChatError, ChatRequest, ChatResponse } from '../chat'
+import type { ScheduleEvent } from '../schedule'
+import type { KeyStore } from './keys'
+import { isCorsLikeError, type ChatFetch } from './transport'
 
 /** What the model is doing between tool calls, phrased for the user. Streamed as
  *  a status delta so the wait for the first token is never dead air. */
@@ -41,12 +43,41 @@ export interface GenerateArgs {
   signal?: AbortSignal
   /** Streamed output text and between-tool status, as they happen. */
   onDelta?: (delta: ChatDelta) => void
+  /** Commits tool capture at an AI SDK step boundary. Effects produced by a
+   * step that never finishes are deliberately excluded from partial turns. */
+  onStepFinish?: () => void
 }
 
 export type GenerateFn = (args: GenerateArgs) => Promise<{ text: string }>
 
-const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, signal, onDelta }) => {
-  const first = streamText({
+function textParts(value: unknown): string {
+  if (!Array.isArray(value)) return ''
+  return value
+    .map((part) => {
+      if (!part || typeof part !== 'object') return ''
+      const row = part as { type?: unknown; text?: unknown }
+      return row.type === 'text' && typeof row.text === 'string' ? row.text : ''
+    })
+    .join('')
+}
+
+function allStepText(result: unknown): string {
+  if (!result || typeof result !== 'object') return ''
+  const row = result as { steps?: unknown; content?: unknown }
+  if (Array.isArray(row.steps)) {
+    const accumulated = row.steps
+      .map((step) => textParts((step as { content?: unknown } | null)?.content))
+      .join('')
+    if (accumulated) return accumulated
+  }
+  return textParts(row.content)
+}
+
+/** Buffered transports cannot expose an SSE body. Use the SDK's non-streaming
+ * path and accumulate text content across every tool step because `.text`
+ * represents only the final step. */
+const defaultGenerateBuffered: GenerateFn = async ({ model, system, messages, tools, signal }) => {
+  const result = await generateText({
     model,
     system,
     messages,
@@ -54,11 +85,38 @@ const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, sig
     stopWhen: stepCountIs(MAX_STEPS),
     abortSignal: signal,
   })
+  let accumulated = allStepText(result)
+  if (result.text.trim() || signal?.aborted) return { text: accumulated || result.text }
+
+  const summary = await generateText({
+    model,
+    system,
+    messages: [...messages, ...result.responseMessages],
+    tools,
+    toolChoice: 'none',
+    abortSignal: signal,
+  })
+  const summaryText = allStepText(summary) || summary.text
+  if (accumulated && summaryText) accumulated += '\n\n'
+  return { text: accumulated + summaryText }
+}
+
+const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, signal, onDelta, onStepFinish }) => {
+  const first = streamText({
+    model,
+    system,
+    messages,
+    tools,
+    stopWhen: stepCountIs(MAX_STEPS),
+    abortSignal: signal,
+    onStepFinish: () => onStepFinish?.(),
+  })
   // Accumulate what actually streamed. `first.text` is only the FINAL step's
   // text; fullStream deltas span every step, so the accumulation is what the
   // user watched — returning it means finalize never rewrites the screen.
   let streamed = ''
   for await (const part of first.fullStream) {
+    if (signal?.aborted) break
     if (part.type === 'text-delta') {
       streamed += part.text
       onDelta?.({ text: part.text })
@@ -93,8 +151,10 @@ const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, sig
     tools,
     toolChoice: 'none',
     abortSignal: signal,
+    onStepFinish: () => onStepFinish?.(),
   })
   for await (const part of summary.fullStream) {
+    if (signal?.aborted) break
     if (part.type === 'text-delta') {
       streamed += part.text
       onDelta?.({ text: part.text })
@@ -104,7 +164,7 @@ const defaultGenerate: GenerateFn = async ({ model, system, messages, tools, sig
 }
 
 export interface ChatDeps {
-  keyStore: { get(provider: ChatRequest['provider']): string | null }
+  keyStore: Pick<KeyStore, 'get'>
   getEvents: () => readonly ScheduleEvent[]
   getCandidates: () => readonly FilterCandidate[]
   /** Aborts the in-flight model call — the Stop button, and the timeout. */
@@ -113,6 +173,11 @@ export interface ChatDeps {
   onDelta?: (delta: ChatDelta) => void
   /** Injected in tests; production uses AI SDK streamText. */
   generate?: GenerateFn
+  /** Required for real providers; tests with an injected generate function do
+   * not perform network I/O and may omit it. */
+  fetchImpl?: ChatFetch
+  /** Direct browser fetch streams; native helper fallback is buffered. */
+  generationMode?: 'stream' | 'buffered'
 }
 
 function matchContextFrom(starredUids: string[], changedUids: string[]): MatchContext {
@@ -133,7 +198,11 @@ function classifyError(error: unknown): ChatError {
   if (status === 401 || status === 403 || /\b401\b|unauthor|invalid.*api.*key|api.*key.*invalid/i.test(message)) {
     return { kind: 'auth', message: 'The API key was rejected. Check it and try again.' }
   }
-  return { kind: 'provider', message }
+  return {
+    kind: 'provider',
+    message,
+    ...(isCorsLikeError(error) ? { transport: 'cors' as const } : {}),
+  }
 }
 
 /** An aborted signal is either the user's Stop or the timeout; the reason tells
@@ -147,12 +216,16 @@ function abortResponse(signal: AbortSignal): ChatResponse {
 }
 
 export async function runChatTurn(deps: ChatDeps, request: ChatRequest): Promise<ChatResponse> {
-  const key = deps.keyStore.get(request.provider)
+  const key = await deps.keyStore.get(request.provider)
   if (!key) {
     return { ok: false, error: { kind: 'no-key', message: `No ${request.provider} API key is stored.` } }
   }
 
   const capture: TurnCapture = { eventUids: [], toolTrace: [] }
+  let committed: TurnCapture = { eventUids: [], toolTrace: [] }
+  const commitStep = (): void => {
+    committed = structuredClone(capture)
+  }
   const ctx: ToolContext = {
     candidates: deps.getCandidates(),
     events: deps.getEvents(),
@@ -166,33 +239,72 @@ export async function runChatTurn(deps: ChatDeps, request: ChatRequest): Promise
 
   let model: LanguageModel
   try {
-    model = languageModel(request.provider, key, request.model)
+    model = languageModel(
+      request.provider,
+      key,
+      request.model,
+      deps.fetchImpl ?? (async () => { throw new Error('A provider transport is required.') }) as ChatFetch,
+    )
   } catch (error) {
     return { ok: false, error: classifyError(error) }
   }
 
-  const generate = deps.generate ?? defaultGenerate
+  const generate = deps.generate ?? (deps.generationMode === 'buffered' ? defaultGenerateBuffered : defaultGenerate)
+  let streamed = ''
+  const forwardDelta = (delta: ChatDelta): void => {
+    if (deps.signal?.aborted) return
+    if (delta.text) streamed += delta.text
+    deps.onDelta?.(delta)
+  }
+  const turnFrom = (source: TurnCapture, text: string, interrupted?: true): ChatResponse => ({
+    ok: true,
+    turn: {
+      message: { role: 'assistant', content: text },
+      ...(interrupted ? { interrupted } : {}),
+      patch: source.patch,
+      eventUids: source.eventUids,
+      proposedAction: source.proposedAction,
+      toolTrace: source.toolTrace,
+    },
+  })
+  const interruptedTurn = (text: string): ChatResponse => ({
+    ok: true,
+    turn: {
+      interrupted: true,
+      message: { role: 'assistant', content: text },
+      // Cards and trace are read-only evidence from completed steps. Mutation
+      // effects never leave an interrupted turn, even when the step completed.
+      eventUids: committed.eventUids,
+      toolTrace: committed.toolTrace,
+    },
+  })
+  const abortedPartialTurn = (text: string): ChatResponse =>
+    turnFrom({ eventUids: [], toolTrace: [] }, text, true)
   try {
-    const { text } = await generate({ model, system: SYSTEM_PROMPT, messages, tools, signal: deps.signal, onDelta: deps.onDelta })
+    const { text } = await generate({
+      model,
+      system: SYSTEM_PROMPT,
+      messages,
+      tools,
+      signal: deps.signal,
+      onDelta: forwardDelta,
+      onStepFinish: commitStep,
+    })
     // An abort after ≥1 completed step RESOLVES the stream rather than rejecting
     // (AI SDK v7), so a Stop or timeout can land here with a half-answer. Treat
     // an aborted signal as the failure it is, never as a complete turn.
-    if (deps.signal?.aborted) return abortResponse(deps.signal)
-    return {
-      ok: true,
-      turn: {
-        // A model that ends on a tool call returns undefined text; never let
-        // that reach the renderer as a literal "undefined".
-        message: { role: 'assistant', content: text ?? '' },
-        patch: capture.patch,
-        eventUids: capture.eventUids,
-        proposedAction: capture.proposedAction,
-        toolTrace: capture.toolTrace,
-      },
+    if (deps.signal?.aborted) {
+      return streamed.trim() ? abortedPartialTurn(streamed) : abortResponse(deps.signal)
     }
+    return turnFrom(capture, text ?? '')
   } catch (error) {
     // The abort can also reject (before any step completed); same handling.
-    if (deps.signal?.aborted) return abortResponse(deps.signal)
+    if (deps.signal?.aborted) {
+      return streamed.trim() ? abortedPartialTurn(streamed) : abortResponse(deps.signal)
+    }
+    // Once prose reached the user, preserve it as a visibly interrupted turn.
+    // Only capture from completed SDK steps is allowed to leave the loop.
+    if (streamed.trim()) return interruptedTurn(streamed)
     return { ok: false, error: classifyError(error) }
   }
 }

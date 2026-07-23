@@ -5,7 +5,7 @@
  *   1. Schedule facts come only from tools, never from memory.
  *   2. No mutation (star, export) without a proposed-action confirm.
  *
- * Rule 1 is why the tool set exists at all: the model has no reliable memory of
+ * Platform-neutral by design. Rule 1 is why the tool set exists at all: the model has no reliable memory of
  * which of 3,474 Comic-Con events a given panel is, so every schedule claim it
  * makes has to trace to a tool result. World knowledge and judgment — franchise
  * lore, Hall H line strategy, whether two rooms are a realistic walk — it

@@ -4,16 +4,18 @@ import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { KeyStore, type SafeStorage } from '../keyStore'
 
+const encoder = new TextEncoder()
+const decoder = new TextDecoder()
+
 /** A stand-in for electron.safeStorage: a reversible prefix so a round-trip is
- *  observable, and a decrypt that throws on anything it did not write — the
- *  "sealed under another credential" case. */
+ * observable, and a decrypt that throws on anything it did not write. */
 const workingSafe: SafeStorage = {
   isEncryptionAvailable: () => true,
-  encryptString: (plain) => Buffer.from(`enc:${plain}`, 'utf8'),
-  decryptString: (buf) => {
-    const s = buf.toString('utf8')
-    if (!s.startsWith('enc:')) throw new Error('cannot decrypt')
-    return s.slice(4)
+  encryptString: (plain) => Buffer.from(encoder.encode(`enc:${plain}`)),
+  decryptString: (bytes) => {
+    const value = decoder.decode(bytes)
+    if (!value.startsWith('enc:')) throw new Error('cannot decrypt')
+    return value.slice(4)
   },
 }
 
@@ -28,47 +30,55 @@ afterEach(() => {
 })
 
 describe('KeyStore', () => {
-  it('stores a key encrypted and reads it back', () => {
+  it('stores a key encrypted and reads it back', async () => {
     const store = new KeyStore(base, workingSafe)
-    store.set('anthropic', 'sk-ant-123')
-    expect(store.get('anthropic')).toBe('sk-ant-123')
+    await store.set('anthropic', 'sk-ant-123')
+    await expect(store.get('anthropic')).resolves.toBe('sk-ant-123')
   })
 
-  it('reports status without exposing the key', () => {
+  it('reports absent, unreadable, and present without exposing key values', async () => {
     const store = new KeyStore(base, workingSafe)
-    store.set('anthropic', 'sk-ant-123')
-    expect(store.status()).toEqual({ anthropic: true, openai: false, openrouter: false })
+    await store.set('anthropic', 'sk-ant-123')
+    await expect(store.status()).resolves.toEqual({
+      anthropic: 'present',
+      openai: 'absent',
+      openrouter: 'absent',
+    })
   })
 
-  it('trims whitespace before storing', () => {
+  it('trims whitespace before storing', async () => {
     const store = new KeyStore(base, workingSafe)
-    store.set('openai', '  sk-oai-xyz  ')
-    expect(store.get('openai')).toBe('sk-oai-xyz')
+    await store.set('openai', '  sk-oai-xyz  ')
+    await expect(store.get('openai')).resolves.toBe('sk-oai-xyz')
   })
 
-  it('an empty key deletes the stored one', () => {
+  it('an empty key deletes the stored one', async () => {
     const store = new KeyStore(base, workingSafe)
-    store.set('anthropic', 'sk-ant-123')
-    store.set('anthropic', '   ')
-    expect(store.get('anthropic')).toBeNull()
-    expect(store.status().anthropic).toBe(false)
+    await store.set('anthropic', 'sk-ant-123')
+    await store.set('anthropic', '   ')
+    await expect(store.get('anthropic')).resolves.toBeNull()
+    expect((await store.status()).anthropic).toBe('absent')
   })
 
-  it('clear removes only the named provider', () => {
+  it('clear removes only the named provider', async () => {
     const store = new KeyStore(base, workingSafe)
-    store.set('anthropic', 'a')
-    store.set('openai', 'b')
-    store.clear('anthropic')
-    expect(store.status()).toEqual({ anthropic: false, openai: true, openrouter: false })
+    await store.set('anthropic', 'a')
+    await store.set('openai', 'b')
+    await store.clear('anthropic')
+    await expect(store.status()).resolves.toEqual({
+      anthropic: 'absent',
+      openai: 'present',
+      openrouter: 'absent',
+    })
   })
 
-  it('persists across instances over the same directory', () => {
-    new KeyStore(base, workingSafe).set('openrouter', 'or-key')
-    expect(new KeyStore(base, workingSafe).get('openrouter')).toBe('or-key')
+  it('persists across instances over the same directory', async () => {
+    await new KeyStore(base, workingSafe).set('openrouter', 'or-key')
+    await expect(new KeyStore(base, workingSafe).get('openrouter')).resolves.toBe('or-key')
   })
 
-  it('reads a key sealed under another credential as absent, not a throw', () => {
-    new KeyStore(base, workingSafe).set('anthropic', 'sk-ant-123')
+  it('maps ciphertext sealed under another Electron credential to absent', async () => {
+    await new KeyStore(base, workingSafe).set('anthropic', 'sk-ant-123')
     const foreignSafe: SafeStorage = {
       ...workingSafe,
       decryptString: () => {
@@ -76,19 +86,24 @@ describe('KeyStore', () => {
       },
     }
     const store = new KeyStore(base, foreignSafe)
-    expect(store.get('anthropic')).toBeNull()
+    await expect(store.get('anthropic')).resolves.toBeNull()
+    expect((await store.status()).anthropic).toBe('absent')
   })
 
-  it('refuses to store in plaintext when encryption is unavailable', () => {
+  it('refuses to store in plaintext when encryption is unavailable', async () => {
     const noCrypto: SafeStorage = { ...workingSafe, isEncryptionAvailable: () => false }
     const store = new KeyStore(base, noCrypto)
-    expect(() => store.set('anthropic', 'sk-ant-123')).toThrow(/keychain/i)
-    expect(store.status().anthropic).toBe(false)
+    await expect(store.set('anthropic', 'sk-ant-123')).rejects.toThrow(/keychain/i)
+    expect((await store.status()).anthropic).toBe('absent')
   })
 
-  it('returns empty status when nothing is stored', () => {
+  it('returns absent status when nothing is stored', async () => {
     const store = new KeyStore(base, workingSafe)
-    expect(store.status()).toEqual({ anthropic: false, openai: false, openrouter: false })
-    expect(store.get('anthropic')).toBeNull()
+    await expect(store.status()).resolves.toEqual({
+      anthropic: 'absent',
+      openai: 'absent',
+      openrouter: 'absent',
+    })
+    await expect(store.get('anthropic')).resolves.toBeNull()
   })
 })

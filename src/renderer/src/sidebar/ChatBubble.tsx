@@ -17,6 +17,7 @@ export interface ChatEntry {
    *  shown until the first token arrives. */
   streaming?: boolean
   status?: string
+  interrupted?: boolean
 }
 
 /** Flatten a Markdown node's children to their plain text, for matching a
@@ -34,12 +35,14 @@ export function Bubble({
   onOpen,
   onConfirm,
   onDismiss,
+  onResend,
 }: {
   entry: ChatEntry
   byUid: Map<string, ScheduleEvent>
   onOpen: (uid: string) => void
   onConfirm: () => void
   onDismiss: () => void
+  onResend: () => void
 }) {
   const isUser = entry.message.role === 'user'
 
@@ -151,6 +154,18 @@ export function Bubble({
           onConfirm={onConfirm}
           onDismiss={onDismiss}
         />
+      ) : null}
+      {!isUser && entry.interrupted ? (
+        <div className="flex items-center gap-2 text-[11px] text-ink-faint">
+          <span>Interrupted</span>
+          <button
+            type="button"
+            onClick={onResend}
+            className="h-8 rounded-md border border-line px-2.5 text-[11px] text-ink-dim hover:border-lumen-dim hover:text-lumen"
+          >
+            Resend
+          </button>
+        </div>
       ) : null}
     </div>
   )

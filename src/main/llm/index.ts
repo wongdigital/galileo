@@ -1,10 +1,20 @@
-/**
- * The main-process chat concierge. All I/O (the encrypted key store, the LLM
- * calls) lives on this side of the bridge; `src/shared/chat` stays pure.
- */
+/** Electron adapters plus compatibility re-exports for the platform-neutral
+ * LLM core. Network execution is injected by each host; only encrypted file
+ * storage and IPC remain main-process concerns. */
 
 export { KeyStore, type SafeStorage } from './keyStore'
 export { registerLlmIpc, type LlmIpcDeps, type LlmIpcHost } from './ipc'
-export { runChatTurn, type ChatDeps, type GenerateFn } from './loop'
-export { buildTools, type ToolContext, type TurnCapture } from './tools'
-export { listModels } from './models'
+export {
+  createChatSession,
+  runChatTurn,
+  buildTools,
+  listModels,
+  type ChatDeps,
+  type ChatSession,
+  type ChatSessionDeps,
+  type ChatTransport,
+  type GenerateFn,
+  type KeyStore as SharedKeyStore,
+  type ToolContext,
+  type TurnCapture,
+} from '../../shared/llm'

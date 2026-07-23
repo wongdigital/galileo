@@ -65,9 +65,13 @@ export function ChatTab() {
     if (!api) return
     void api.keyStatus().then((status) => {
       setKeyStatus(status)
-      const firstWithKey = PROVIDERS.find((p) => status[p])
+      const firstWithKey = PROVIDERS.find((p) => status[p] === 'present')
       if (firstWithKey) setProvider(firstWithKey)
-      else setSetupOpen(true)
+      else {
+        const unreadable = PROVIDERS.find((p) => status[p] === 'unreadable')
+        if (unreadable) setProvider(unreadable)
+        else setSetupOpen(true)
+      }
     })
   }, [])
 
@@ -91,7 +95,8 @@ export function ChatTab() {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight })
   }, [entries])
 
-  const hasAnyKey = keyStatus ? PROVIDERS.some((p) => keyStatus[p]) : false
+  const selectedKeyState = keyStatus?.[provider]
+  const canChat = selectedKeyState === 'present'
 
   // Pull the live catalogue for a provider — OpenRouter always, the other two
   // once their key exists (their /models endpoint needs it). A miss leaves the
@@ -104,7 +109,7 @@ export function ChatTab() {
   }, [])
 
   useEffect(() => {
-    if (provider === 'openrouter' || keyStatus?.[provider]) void refreshModels(provider)
+    if (provider === 'openrouter' || keyStatus?.[provider] === 'present') void refreshModels(provider)
   }, [provider, keyStatus, refreshModels])
 
   const modelChoices = liveModels[provider] ?? MODELS[provider]
@@ -133,8 +138,8 @@ export function ChatTab() {
     [spine],
   )
 
-  const send = useCallback(async () => {
-    const text = input.trim()
+  const send = useCallback(async (retryText?: string, retryEntryIndex?: number) => {
+    const text = (retryText ?? input).trim()
     if (!text || sending) return
     const api = bridge()?.llm
     if (!api) {
@@ -142,7 +147,13 @@ export function ChatTab() {
       return
     }
 
-    const history: ChatMessage[] = [...entries.map((e) => e.message), { role: 'user', content: text }]
+    const historyEntries = retryEntryIndex === undefined
+      ? entries
+      : entries.slice(0, Math.max(0, retryEntryIndex - 1))
+    const history: ChatMessage[] = [
+      ...historyEntries.filter((entry) => !entry.interrupted).map((entry) => entry.message),
+      { role: 'user', content: text },
+    ]
     // The user message, and an empty assistant placeholder that streams in.
     setEntries((prev) => [
       ...prev,
@@ -208,7 +219,7 @@ export function ChatTab() {
 
       const { turn } = response
       // Commit state through the same setters the chips use — one path in.
-      if (turn.patch) applyPatch(turn.patch)
+      if (!turn.interrupted && turn.patch) applyPatch(turn.patch)
 
       // Finalize the placeholder: the returned turn is canonical, falling back
       // to whatever streamed if it came back empty.
@@ -224,8 +235,9 @@ export function ChatTab() {
           },
           streaming: false,
           eventUids: turn.eventUids.length > 0 ? turn.eventUids : undefined,
-          proposedAction: turn.proposedAction,
-          actionState: turn.proposedAction ? 'pending' : undefined,
+          proposedAction: turn.interrupted ? undefined : turn.proposedAction,
+          actionState: !turn.interrupted && turn.proposedAction ? 'pending' : undefined,
+          interrupted: turn.interrupted,
         }
         return next
       })
@@ -298,10 +310,11 @@ export function ChatTab() {
     void bridge()?.llm.cancelChat()
   }, [])
 
-  // Key presence is three-valued: unknown until the first status load, then
-  // present/absent. The missing-key affordances (red dot, tooltip) key off
-  // "known absent" so they don't flash during startup.
-  const keysMissing = keyStatus !== null && !hasAnyKey
+  // Key presence is unknown until the first status load, then explicitly
+  // absent/unreadable/present. Missing-key affordances key off "all absent"
+  // so neither startup nor a transient keychain lock prompts replacement.
+  const keysMissing = keyStatus !== null && PROVIDERS.every((p) => keyStatus[p] === 'absent')
+  const selectedKeyUnavailable = selectedKeyState === 'unreadable'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -334,6 +347,10 @@ export function ChatTab() {
                 onOpen={(uid) => spine.setSelectedUid(uid)}
                 onConfirm={() => entry.proposedAction && confirmAction(i, entry.proposedAction)}
                 onDismiss={() => dismissAction(i)}
+                onResend={() => {
+                  const prior = entries[i - 1]
+                  if (prior?.message.role === 'user') void send(prior.message.content, i)
+                }}
               />
             ))}
           </div>
@@ -356,11 +373,13 @@ export function ChatTab() {
               void send()
             }
           }}
-          disabled={!hasAnyKey || !datasetReady || sending}
+          disabled={!canChat || !datasetReady || sending}
           rows={2}
           aria-label="Message the concierge"
           placeholder={
-            !hasAnyKey ? 'Add an API key to start' : !datasetReady ? 'Loading the schedule…' : 'Ask, filter, or plan…'
+            !canChat
+              ? selectedKeyUnavailable ? 'API key temporarily unavailable' : 'Add an API key to start'
+              : !datasetReady ? 'Loading the schedule…' : 'Ask, filter, or plan…'
           }
           className="w-full resize-none rounded-md border border-line bg-ground-850 px-2.5 py-2 text-[12.5px] text-ink placeholder:text-ink-faint focus:border-lumen-dim focus:outline-none disabled:opacity-50"
         />
@@ -399,8 +418,8 @@ export function ChatTab() {
             <button
               type="button"
               onClick={() => void send()}
-              disabled={!hasAnyKey || !datasetReady || input.trim().length === 0}
-              title={keysMissing ? 'Add a valid LLM API key to chat' : undefined}
+              disabled={!canChat || !datasetReady || input.trim().length === 0}
+              title={selectedKeyUnavailable ? 'API key temporarily unavailable' : !canChat ? 'Add a valid LLM API key to chat' : undefined}
               className="h-8 rounded-md border border-lumen-dim bg-lumen/10 px-3 text-[12px] text-ink-bright transition-colors duration-150 hover:bg-lumen/20 disabled:opacity-40 disabled:hover:bg-lumen/10"
             >
               Send

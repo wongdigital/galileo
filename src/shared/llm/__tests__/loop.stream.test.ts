@@ -9,11 +9,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runChatTurn, type ChatDeps } from '../loop'
-import { EMPTY_FILTER } from '../../../shared/filter/types'
-import type { ChatDelta, ChatRequest } from '../../../shared/chat'
+import { EMPTY_FILTER } from '../../filter/types'
+import type { ChatDelta, ChatRequest } from '../../chat'
 
-const { streamText } = vi.hoisted(() => ({ streamText: vi.fn() }))
+const { generateText, streamText } = vi.hoisted(() => ({ generateText: vi.fn(), streamText: vi.fn() }))
 vi.mock('ai', () => ({
+  generateText,
   streamText,
   stepCountIs: (n: number) => n,
   tool: (config: unknown) => config,
@@ -47,7 +48,7 @@ const request: ChatRequest = {
 
 function deps(over: Partial<ChatDeps> = {}): ChatDeps {
   return {
-    keyStore: { get: () => 'sk-test' },
+    keyStore: { get: async () => 'sk-test' },
     getEvents: () => [],
     getCandidates: () => [],
     ...over,
@@ -55,6 +56,7 @@ function deps(over: Partial<ChatDeps> = {}): ChatDeps {
 }
 
 beforeEach(() => {
+  generateText.mockReset()
   streamText.mockReset()
 })
 
@@ -77,6 +79,24 @@ describe('defaultGenerate streaming', () => {
     // The accumulation spans every step, not just `first.text` (the final step).
     if (res.ok) expect(res.turn.message.content).toBe('Hello world')
     expect(deltas).toEqual([{ text: 'Hello ' }, { status: 'Searching the schedule…' }, { text: 'world' }])
+  })
+
+  it('uses generateText for buffered transport and accumulates prose across every step', async () => {
+    generateText.mockResolvedValue({
+      text: 'second',
+      content: [{ type: 'text', text: 'First ' }, { type: 'text', text: 'second' }],
+      steps: [
+        { content: [{ type: 'text', text: 'First ' }] },
+        { content: [{ type: 'text', text: 'second' }] },
+      ],
+      responseMessages: [],
+    })
+
+    const res = await runChatTurn(deps({ generationMode: 'buffered' }), request)
+
+    expect(res.ok && res.turn.message.content).toBe('First second')
+    expect(generateText).toHaveBeenCalledTimes(1)
+    expect(streamText).not.toHaveBeenCalled()
   })
 
   it('forces a tools+toolChoice-none summary when the final step wrote no prose', async () => {
@@ -115,6 +135,73 @@ describe('defaultGenerate streaming', () => {
 
     expect(res.ok).toBe(false)
     if (!res.ok) expect(res.error.kind).toBe('aborted')
+  })
+
+  it('keeps partial text as interrupted and drops every tool effect when cancelled midstream', async () => {
+    const controller = new AbortController()
+    const generate: import('../loop').GenerateFn = async ({ tools, onDelta, onStepFinish }) => {
+      const apply = tools.apply_filters.execute as (
+        input: unknown,
+        options: unknown,
+      ) => Promise<unknown>
+      await apply(
+        { add: [{ dimension: 'genre', value: 'horror' }] },
+        { toolCallId: 'tool-1', messages: [] },
+      )
+      onStepFinish?.()
+      onDelta?.({ text: 'Partial answer' })
+      controller.abort(new Error('cancelled'))
+      onDelta?.({ text: ' must not escape' })
+      return { text: 'Partial answer must not escape' }
+    }
+    const deltas: ChatDelta[] = []
+
+    const res = await runChatTurn(
+      deps({ generate, signal: controller.signal, onDelta: (delta) => deltas.push(delta) }),
+      request,
+    )
+
+    expect(res).toEqual({
+      ok: true,
+      turn: {
+        interrupted: true,
+        message: { role: 'assistant', content: 'Partial answer' },
+        eventUids: [],
+        toolTrace: [],
+      },
+    })
+    expect(deltas).toEqual([{ text: 'Partial answer' }])
+  })
+
+  it('keeps completed-step trace but drops mutation effects when a later stream failure interrupts', async () => {
+    const generate: import('../loop').GenerateFn = async ({ tools, onDelta, onStepFinish }) => {
+      const apply = tools.apply_filters.execute as (
+        input: unknown,
+        options: unknown,
+      ) => Promise<unknown>
+      await apply(
+        { add: [{ dimension: 'genre', value: 'horror' }] },
+        { toolCallId: 'tool-1', messages: [] },
+      )
+      onStepFinish?.()
+      onDelta?.({ text: 'Partial answer' })
+      throw new Error('connection lost')
+    }
+
+    const res = await runChatTurn(deps({ generate }), request)
+
+    expect(res).toMatchObject({
+      ok: true,
+      turn: {
+        interrupted: true,
+        message: { role: 'assistant', content: 'Partial answer' },
+        toolTrace: ['apply_filters'],
+      },
+    })
+    if (res.ok) {
+      expect(res.turn.patch).toBeUndefined()
+      expect(res.turn.proposedAction).toBeUndefined()
+    }
   })
 
   it('returns the timeout provider error when the abort reason is timeout', async () => {
