@@ -197,7 +197,7 @@ describe('performRefresh', () => {
     expect((await accepted).warning).toBeUndefined()
   })
 
-  it.each([1, 2, 3])('leaves a consistent readable prefix when write step %i halts', async (failAt) => {
+  it.each([1, 2])('leaves a consistent readable prefix when write step %i halts', async (failAt) => {
     const old = snapshot([event(UID_A, 'Old')])
     const { store, deps, slots } = harness(old)
     store.failAt = failAt
@@ -209,8 +209,26 @@ describe('performRefresh', () => {
     const log = await slots.readChangeLog()
     if (failAt === 1) expect(lastFetched).toBeNull()
     else expect(lastFetched?.fetchedAt).toBe('2026-07-22T19:00:00.000Z')
-    if (failAt <= 2) expect(lastKnownGood?.events[0]?.title).toBe('Old')
-    else expect(lastKnownGood?.events[0]?.title).toBe('Panel A')
+    expect(lastKnownGood?.events[0]?.title).toBe('Old')
     expect(log.schemaVersion).toBe(1)
+  })
+
+  it('returns a promoted projection when the advisory change-log write fails', async () => {
+    const old = snapshot([event(UID_A, 'Old')])
+    const { store, deps, slots } = harness(old)
+    store.failAt = 3
+
+    const result = await performRefresh(deps)
+
+    expect(result).toMatchObject({
+      stale: false,
+      fetchedAt: '2026-07-22T19:00:00.000Z',
+    })
+    expect(result.events[0]?.title).toBe('Panel A')
+    expect((await slots.readSnapshot('last-known-good'))?.events[0]?.title).toBe('Panel A')
+    expect(deps.warn).toHaveBeenCalledOnce()
+    expect(deps.warn).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'halt after unseen-changes.json',
+    }))
   })
 })

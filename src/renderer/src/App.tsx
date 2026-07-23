@@ -288,13 +288,18 @@ function Sidebar({ tier, open, onClose, invokerRef }: SidebarProps) {
       {/* h-rail: this row, the day rail, and the graph toolbar share the
           titlebar's 52px beat so their dividers align across the seam. */}
       <div className="flex h-rail shrink-0 items-center border-b border-line px-2">
+        {tier === 'compact' ? (
+          <div className="order-2 ml-2">
+            <ExportButton touch />
+          </div>
+        ) : null}
         {overlay ? (
           <button
             data-sidebar-close
             type="button"
             aria-label="Close planning sidebar"
             onClick={onClose}
-            className="order-2 ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-line text-xl text-ink-dim hover:border-line-strong hover:text-ink"
+            className="order-3 ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-line text-xl text-ink-dim hover:border-line-strong hover:text-ink"
           >
             <span aria-hidden="true">×</span>
           </button>

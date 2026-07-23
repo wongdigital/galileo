@@ -68,8 +68,7 @@ export class StarSlots {
       if (previous !== null) await this.store.replace(STAR_BACKUP_NAME, previous)
       await this.store.replace(STAR_PRIMARY_NAME, file)
       return file.stars
-    } catch (error) {
-      console.warn('[stars] write failed, echoing back last persisted list:', error)
+    } catch {
       return this.read()
     }
   }

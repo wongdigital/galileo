@@ -90,7 +90,11 @@ async function runRefresh(dependencies: RefreshDependencies, acceptAnyway: boole
   if (outcome.promote) await dependencies.slots.writeSnapshot('last-known-good', outcome.promote)
 
   // Prefix 4: the advisory log lands last and is recomputable from snapshots.
-  await dependencies.slots.writeChangeLog(outcome.log)
+  try {
+    await dependencies.slots.writeChangeLog(outcome.log)
+  } catch (error) {
+    dependencies.warn?.(error)
+  }
   return outcome.projection
 }
 

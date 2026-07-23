@@ -44,6 +44,28 @@ describe('durable theme preference', () => {
     expect(document.documentElement.dataset.theme).toBeUndefined()
   })
 
+  it('migrates a legacy localStorage theme into durable settings', async () => {
+    localStorage.setItem('galileo.theme', 'light')
+    api.settings.get.mockResolvedValue(null)
+
+    await initTheme()
+
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(api.settings.set).toHaveBeenCalledWith('theme', 'light')
+    expect(localStorage.getItem('galileo.theme')).toBeNull()
+  })
+
+  it('keeps a legacy theme when its durable migration fails', async () => {
+    localStorage.setItem('galileo.theme', 'light')
+    api.settings.get.mockResolvedValue(null)
+    api.settings.set.mockRejectedValue(new Error('disk unavailable'))
+
+    await initTheme()
+
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(localStorage.getItem('galileo.theme')).toBe('light')
+  })
+
   it('does not leave startup blocked when the settings adapter never settles', async () => {
     vi.useFakeTimers()
     api.settings.get.mockReturnValue(new Promise(() => {}))

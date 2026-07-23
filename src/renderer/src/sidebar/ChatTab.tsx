@@ -342,11 +342,10 @@ export function ChatTab() {
             onProviderChange={setProvider}
             onModelChange={setModelFor}
             onRefreshModels={() => void refreshModels(provider)}
-            onStatus={(status) => {
-              setKeyStatus(status)
-              // A freshly saved key unlocks that provider's live catalogue.
-              void refreshModels(provider)
-            }}
+            // Updating key status activates the option-aware catalogue effect
+            // above; calling refresh here as well would issue the same request
+            // twice after a successful save.
+            onStatus={setKeyStatus}
             onDone={() => setSetupOpen(false)}
           />
         ) : entries.length === 0 ? (

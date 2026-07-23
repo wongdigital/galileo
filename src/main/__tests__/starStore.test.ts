@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { StarStore, registerStarIpc, type StarIpcMain } from '../starStore'
 import { STARS_SCHEMA_VERSION, type StarRecord } from '../../shared/stars'
 
@@ -87,7 +87,6 @@ describe('StarStore', () => {
 
   it('echoes back the previous list when the write fails, so the loss is visible now', async () => {
     await store.write([star('a')])
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     // Occupy the store's deterministic temp path with a directory, so the temp
     // write fails on every platform while stars.json stays intact for the
     // echo. (The old injection — chmod 0o500 on the parent directory — is a
@@ -99,8 +98,6 @@ describe('StarStore', () => {
 
     expect(echoed).toEqual([star('a')])
     expect(JSON.parse(readFileSync(file(), 'utf8')).stars).toEqual([star('a')])
-    expect(warn).toHaveBeenCalled()
-    warn.mockRestore()
   })
 })
 

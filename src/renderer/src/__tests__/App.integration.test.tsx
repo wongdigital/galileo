@@ -637,8 +637,14 @@ describe('responsive shell', () => {
     expect(await screen.findByText('Drawing Monsters for a Living')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Related' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '5-Day' })).toBeTruthy()
+    const sidebarButton = screen.getByRole('button', { name: 'Open planning sidebar' })
     expect(screen.queryByRole('button', { name: /Star events to export/ })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Open planning sidebar' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Star Drawing Monsters/ }))
+    await waitFor(() => expect(persisted).toHaveLength(1))
+    fireEvent.click(sidebarButton)
+    fireEvent.click(screen.getByRole('button', { name: /Export 1 starred event/ }))
+    expect(api.export.ics).toHaveBeenCalledWith({ uids: ['horror-sat'] })
   })
 
   it('keeps graph identity and focused entity through the wide→medium gate', async () => {

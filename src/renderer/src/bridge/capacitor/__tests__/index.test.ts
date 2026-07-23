@@ -6,7 +6,7 @@ import { createCapacitorBridge, type CapacitorBridgeDeps } from '..'
 
 function dependencies(): {
   deps: CapacitorBridgeDeps
-  activate: () => void
+  setActive: (active: boolean) => void
   appearanceChange: () => void
   reset: ReturnType<typeof vi.fn>
 } {
@@ -30,7 +30,7 @@ function dependencies(): {
   })
   return {
     reset,
-    activate: () => listener?.({ isActive: true }),
+    setActive: (active) => listener?.({ isActive: active }),
     appearanceChange: () => appearanceListener?.(),
     deps: {
       filesystem: {
@@ -70,13 +70,25 @@ function dependencies(): {
 
 describe('createCapacitorBridge', () => {
   it('uses native app metadata and invalidates the cached palette on appearance change and resume', async () => {
-    const { deps, activate, appearanceChange, reset } = dependencies()
+    const { deps, setActive, appearanceChange, reset } = dependencies()
     const bridge = createCapacitorBridge(deps)
 
     await expect(bridge.app.version()).resolves.toBe('2.3.4')
-    appearanceChange()
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    })
     document.dispatchEvent(new Event('visibilitychange'))
-    activate()
+    setActive(false)
+    expect(reset).not.toHaveBeenCalled()
+
+    appearanceChange()
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+    setActive(true)
     expect(reset).toHaveBeenCalledTimes(3)
   })
 })
