@@ -21,6 +21,8 @@ import type { Ref } from 'react'
 import { SpineProvider } from '@renderer/state/spine'
 import { GraphView } from '../GraphView'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
+import type { StarRecord } from '@shared/stars'
+import { clearFakeBridge, installFakeBridge } from '../../../test/fakeBridge'
 
 // A promise that never settles: the loading window, made permanent.
 vi.mock('@data/enrichment.json', () => new Promise<never>(() => {}))
@@ -69,12 +71,12 @@ const projection = (): DatasetProjection => ({
 })
 
 beforeEach(() => {
-  ;(window as unknown as { api: unknown }).api = {
+  installFakeBridge({
     schedule: { refresh: vi.fn(async () => projection()) },
     changes: { acknowledge: vi.fn(async () => ({})) },
-    stars: { get: vi.fn(async () => []), set: vi.fn(async (n: unknown[]) => n) },
+    stars: { get: vi.fn(async () => []), set: vi.fn(async (n: StarRecord[]) => n) },
     export: { ics: vi.fn() },
-  }
+  })
   globalThis.ResizeObserver = class {
     constructor(private readonly cb: ResizeObserverCallback) {}
     observe(): void {
@@ -85,7 +87,10 @@ beforeEach(() => {
   } as unknown as typeof ResizeObserver
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  clearFakeBridge()
+})
 
 describe('GraphView — before the enrichment index has loaded', () => {
   it('narrates the load instead of asserting the scope shares nothing', async () => {

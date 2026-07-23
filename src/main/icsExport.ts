@@ -13,27 +13,15 @@
 
 import { writeFile } from 'node:fs/promises'
 import { buildIcs } from '../shared/ics'
-import type { IcsBuildOptions, IcsExclusion } from '../shared/ics'
+import type { IcsExclusion } from '../shared/ics'
+import type { IcsExportRequest, IcsExportResult } from '../shared/bridge/types'
 import type { ScheduleEvent } from '../shared/schedule'
 
-/** What the renderer sends. `options` is the builder's, minus the injected stamp. */
-export interface IcsExportRequest {
-  uids: string[]
-  options?: Omit<IcsBuildOptions, 'stamp'>
-}
-
-export type IcsExportResult =
-  | { status: 'saved'; path: string; exported: number; excluded: IcsExclusion[]; sanitized: string[] }
-  /** The user closed the dialog. Not an error — the UI shows nothing. */
-  | { status: 'cancelled'; path: null; exported: 0; excluded: [] }
-  /** Every starred UID was cancelled, a ghost, or on another day. */
-  | { status: 'empty'; path: null; exported: 0; excluded: IcsExclusion[] }
-  | { status: 'failed'; path: null; exported: 0; excluded: []; message: string }
+export type { IcsExportRequest, IcsExportResult } from '../shared/bridge/types'
 
 export interface IcsExportDeps {
-  /** Resolves to null when the user cancels. */
-  showSaveDialog(defaultName: string): Promise<string | null>
-  write(path: string, contents: string): Promise<void>
+  /** Delivers the file through the platform UI. Resolves to null on cancel. */
+  deliver(defaultName: string, contents: string): Promise<string | null>
 }
 
 /** Suggested filename: `comic-con-2026-07-25.ics`, or `comic-con.ics` for the
@@ -44,7 +32,7 @@ export function defaultFileName(day?: string): string {
 }
 
 const electronDeps: IcsExportDeps = {
-  showSaveDialog: async (defaultName) => {
+  deliver: async (defaultName, contents) => {
     // Imported lazily: a top-level `electron` import would make this module
     // unloadable under vitest, where there is no Electron runtime.
     const { dialog } = await import('electron')
@@ -53,9 +41,10 @@ const electronDeps: IcsExportDeps = {
       defaultPath: defaultName,
       filters: [{ name: 'Calendar', extensions: ['ics'] }]
     })
-    return result.canceled || !result.filePath ? null : result.filePath
+    if (result.canceled || !result.filePath) return null
+    await writeFile(result.filePath, contents, 'utf8')
+    return result.filePath
   },
-  write: (path, contents) => writeFile(path, contents, 'utf8')
 }
 
 export async function exportIcs(
@@ -81,11 +70,9 @@ export async function exportIcs(
   // Nothing to write beats an empty calendar file the user has to delete.
   if (built.exported === 0) return { status: 'empty', path: null, exported: 0, excluded }
 
-  const path = await deps.showSaveDialog(defaultFileName(request.options?.day))
-  if (!path) return { status: 'cancelled', path: null, exported: 0, excluded: [] }
-
+  let path: string | null
   try {
-    await deps.write(path, built.ics)
+    path = await deps.deliver(defaultFileName(request.options?.day), built.ics)
   } catch (error) {
     return {
       status: 'failed',
@@ -95,6 +82,7 @@ export async function exportIcs(
       message: error instanceof Error ? error.message : String(error)
     }
   }
+  if (!path) return { status: 'cancelled', path: null, exported: 0, excluded: [] }
 
   return {
     status: 'saved',

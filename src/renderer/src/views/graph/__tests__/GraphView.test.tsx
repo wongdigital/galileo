@@ -20,6 +20,8 @@ import type { Ref } from 'react'
 import { SpineProvider, useSpine } from '@renderer/state/spine'
 import { GraphView } from '../GraphView'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
+import type { StarRecord } from '@shared/stars'
+import { clearFakeBridge, installFakeBridge } from '../../../test/fakeBridge'
 
 const { HASH_OF_EMPTY, engine } = vi.hoisted(() => ({
   HASH_OF_EMPTY: 'e3b0c44298fc1c14',
@@ -166,17 +168,20 @@ beforeEach(() => {
   engine.fits = 0
   engine.zooms = []
   engine.stop = null
-  ;(window as unknown as { api: unknown }).api = {
+  installFakeBridge({
     schedule: { refresh: vi.fn(async () => projection()) },
     changes: { acknowledge: vi.fn(async () => ({})) },
-    stars: { get: vi.fn(async () => []), set: vi.fn(async (n: unknown[]) => n) },
+    stars: { get: vi.fn(async () => []), set: vi.fn(async (n: StarRecord[]) => n) },
     export: { ics: vi.fn() },
-  }
+  })
 })
 
 // Vitest runs without globals here, so testing-library's automatic cleanup is
 // never registered — without this each test renders into the previous DOM.
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  clearFakeBridge()
+})
 
 /** jsdom has no layout engine and no ResizeObserver, so the canvas host measures
  *  0 and the render guard keeps the graph unmounted. */

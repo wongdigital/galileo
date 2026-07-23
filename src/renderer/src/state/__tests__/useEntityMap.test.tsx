@@ -12,13 +12,15 @@
  */
 
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { EMPTY_FILTER } from '@shared/filter'
 import { SpineProvider, useSpine } from '../spine'
 import { useEntityMap } from '../useEntityMap'
 import { useSchedule } from '../useSchedule'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
+import type { StarRecord } from '@shared/stars'
+import { clearFakeBridge, installFakeBridge, type FakePlatformBridge } from '../../test/fakeBridge'
 
 /** sha256('') truncated to 16 hex chars — every fixture event has an empty
  *  description, so this is the hash the staleness pass must agree with.
@@ -98,24 +100,27 @@ function projection(events: ScheduleEvent[]): DatasetProjection {
   return { events, changes: {}, fetchedAt: '2026-07-18T00:00:00Z', stale: false }
 }
 
-let persisted: unknown[] = []
+let persisted: StarRecord[] = []
+let api: FakePlatformBridge
 
 beforeEach(() => {
   persisted = []
   vi.stubGlobal('window', window)
-  ;(window as unknown as { api: unknown }).api = {
+  api = installFakeBridge({
     schedule: { refresh: vi.fn(async () => projection(EVENTS)) },
     changes: { acknowledge: vi.fn(async () => ({})) },
     stars: {
       get: vi.fn(async () => persisted),
-      set: vi.fn(async (next: unknown[]) => {
+      set: vi.fn(async (next: StarRecord[]) => {
         persisted = next
         return next
       }),
     },
     export: { ics: vi.fn() },
-  }
+  })
 })
+
+afterEach(clearFakeBridge)
 
 const wrapper = ({ children }: { children: ReactNode }) => <SpineProvider>{children}</SpineProvider>
 
@@ -274,7 +279,7 @@ describe('useEntityMap — shared encodings (R10)', () => {
   })
 
   it('carries the cancelled state alongside the star, exactly as a row does', async () => {
-    ;(window as unknown as { api: { schedule: { refresh: unknown } } }).api.schedule.refresh = vi.fn(
+    api.schedule.refresh = vi.fn(
       async () => projection([{ ...EVENTS[0]!, flags: ['CANCELLED'] }, ...EVENTS.slice(1)]),
     )
     const { result } = await mountReady()
@@ -310,7 +315,7 @@ describe('useEntityMap — shared encodings (R10)', () => {
     const { result } = await mountReady()
     await waitFor(() => expect(result.current.map.events).toHaveLength(4))
 
-    ;(window as unknown as { api: { schedule: { refresh: unknown } } }).api.schedule.refresh = vi.fn(
+    api.schedule.refresh = vi.fn(
       async () => projection(EVENTS.filter((e) => e.uid !== 'p2')),
     )
     await act(async () => {

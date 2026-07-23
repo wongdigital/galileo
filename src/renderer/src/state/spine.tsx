@@ -12,6 +12,7 @@ import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import { normalizeStars, starFromEvent, toggleStar, unstar, type StarRecord } from '@shared/stars'
 import { EMPTY_FILTER, type FilterState } from '@shared/filter'
 import type { LensId } from '@shared/graph'
+import { bridge } from '../bridge'
 
 /**
  * The state spine — the single container both views read and write (R10, R12).
@@ -80,12 +81,6 @@ export interface SpineState {
 }
 
 const SpineContext = createContext<SpineState | null>(null)
-
-/** The preload bridge is absent when the renderer is opened outside Electron
- *  (a plain `vite dev` browser tab). Better an app that renders its empty state
- *  than one that throws on the first line of an effect. */
-const bridge = (): Window['api'] | null =>
-  typeof window !== 'undefined' && window.api ? window.api : null
 
 const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)

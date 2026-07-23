@@ -21,6 +21,7 @@ import { ScheduleView } from '../ScheduleView'
 import { SpineProvider, useSpine } from '@renderer/state/spine'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import type { StarRecord } from '@shared/stars'
+import { clearFakeBridge, installFakeBridge, type FakePlatformBridge } from '../../../test/fakeBridge'
 
 /** The hosted card loads the enrichment index for its metadata sections; an
  *  empty index keeps the 1.2 MB live file out of the suite. */
@@ -75,14 +76,7 @@ const INKING = event('comics-sat', {
 
 const EVENTS = [MONSTERS, INKING]
 
-interface Api {
-  schedule: { refresh: ReturnType<typeof vi.fn> }
-  changes: { acknowledge: ReturnType<typeof vi.fn> }
-  stars: { get: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn> }
-  export: { ics: ReturnType<typeof vi.fn> }
-}
-
-let api: Api
+let api: FakePlatformBridge
 
 function projection(partial: Partial<DatasetProjection> = {}): DatasetProjection {
   return {
@@ -153,15 +147,13 @@ function row(title: string): HTMLElement {
 
 beforeEach(() => {
   giveTheDomASize()
-  api = {
+  api = installFakeBridge({
     schedule: { refresh: vi.fn().mockResolvedValue(projection()) },
     changes: { acknowledge: vi.fn().mockResolvedValue({}) },
     stars: { get: vi.fn().mockResolvedValue([]), set: vi.fn() },
-    export: { ics: vi.fn() },
-  }
+  })
   // Mirrors the real store: persist, then echo back what is on disk.
   api.stars.set.mockImplementation((stars: StarRecord[]) => Promise.resolve(stars))
-  ;(window as unknown as { api: Api }).api = api
 })
 
 afterEach(() => {
@@ -169,7 +161,7 @@ afterEach(() => {
   // runs without them.
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { api?: Api }).api
+  clearFakeBridge()
 })
 
 describe('the card over the list (AE6)', () => {

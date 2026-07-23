@@ -19,6 +19,7 @@ import { SpineProvider, useSpine } from '@renderer/state/spine'
 import { useSchedule } from '@renderer/state/useSchedule'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import type { StarRecord } from '@shared/stars'
+import { clearFakeBridge, installFakeBridge, type FakePlatformBridge } from '../../test/fakeBridge'
 
 /** sha256('') truncated — the metadata fixture's description is empty, so this
  *  is the hash the staleness pass must vouch for. */
@@ -92,14 +93,7 @@ const REPEAT_B = event('repeat-b', {
   room: 'Room 2',
 })
 
-interface Api {
-  schedule: { refresh: ReturnType<typeof vi.fn> }
-  changes: { acknowledge: ReturnType<typeof vi.fn> }
-  stars: { get: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn> }
-  export: { ics: ReturnType<typeof vi.fn> }
-}
-
-let api: Api
+let api: FakePlatformBridge
 
 function projection(partial: Partial<DatasetProjection> = {}): DatasetProjection {
   return {
@@ -151,20 +145,18 @@ async function mountCard(
 }
 
 beforeEach(() => {
-  api = {
+  api = installFakeBridge({
     schedule: { refresh: vi.fn().mockResolvedValue(projection()) },
     changes: { acknowledge: vi.fn().mockResolvedValue({}) },
     stars: { get: vi.fn().mockResolvedValue([]), set: vi.fn() },
-    export: { ics: vi.fn() },
-  }
+  })
   api.stars.set.mockImplementation((stars: StarRecord[]) => Promise.resolve(stars))
-  ;(window as unknown as { api: Api }).api = api
 })
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { api?: Api }).api
+  clearFakeBridge()
 })
 
 describe('a live event', () => {

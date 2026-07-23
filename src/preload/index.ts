@@ -8,13 +8,15 @@ import type {
   ProviderId,
 } from '../shared/chat'
 import type { FilterCandidate } from '../shared/filter/types'
+import type { PlatformBridge } from '../shared/bridge/types'
+import type { StarRecord } from '../shared/stars'
 
 /**
  * The only surface the renderer gets. One named method per channel — no generic
  * `invoke(channel, ...args)` passthrough, which would hand the renderer the
  * whole IPC namespace and make the allowlist meaningless.
  */
-const api = {
+const api: PlatformBridge = {
   app: {
     /** The running app version, read by the standalone About window. */
     version: (): Promise<string> => ipcRenderer.invoke('app:version'),
@@ -30,10 +32,10 @@ const api = {
     get: () => ipcRenderer.invoke('stars:get'),
     // Returns the persisted list; the renderer adopts what comes back rather
     // than assuming its optimistic write landed (R11 echo-back).
-    set: (stars: unknown[]) => ipcRenderer.invoke('stars:set', stars),
+    set: (stars: StarRecord[]) => ipcRenderer.invoke('stars:set', stars),
   },
   export: {
-    ics: (payload: { uids: string[]; options?: unknown }) => ipcRenderer.invoke('export:ics', payload),
+    ics: (payload) => ipcRenderer.invoke('export:ics', payload),
   },
   llm: {
     /** Which providers have a stored key — the key value never crosses here. */
@@ -64,8 +66,13 @@ const api = {
       return () => ipcRenderer.removeListener('llm:chat:delta', listener)
     },
   },
+  settings: {
+    get: (name: string): Promise<unknown | null> => ipcRenderer.invoke('settings:get', name),
+    set: (name: string, value: unknown): Promise<void> =>
+      ipcRenderer.invoke('settings:set', { name, value }),
+  },
 }
 
-export type AppApi = typeof api
+export type AppApi = PlatformBridge
 
 contextBridge.exposeInMainWorld('api', api)

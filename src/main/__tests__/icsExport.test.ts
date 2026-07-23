@@ -5,22 +5,16 @@ import { event, saturdaySessions } from '../../shared/ics/__tests__/fixtures'
 import type { ScheduleEvent } from '../../shared/schedule'
 
 interface Recorder extends IcsExportDeps {
-  writes: Array<{ path: string; contents: string }>
-  prompts: string[]
+  deliveries: Array<{ defaultName: string; contents: string }>
 }
 
 function recorder(path: string | null): Recorder {
-  const writes: Array<{ path: string; contents: string }> = []
-  const prompts: string[] = []
+  const deliveries: Array<{ defaultName: string; contents: string }> = []
   return {
-    writes,
-    prompts,
-    showSaveDialog: async (defaultName) => {
-      prompts.push(defaultName)
+    deliveries,
+    deliver: async (defaultName, contents) => {
+      deliveries.push({ defaultName, contents })
       return path
-    },
-    write: async (target, contents) => {
-      writes.push({ path: target, contents })
     }
   }
 }
@@ -42,9 +36,9 @@ describe('exportIcs', () => {
 
     expect(result.status).toBe('saved')
     expect(result.exported).toBe(6)
-    expect(deps.writes).toHaveLength(1)
-    expect(deps.writes[0]?.path).toBe('/tmp/stars.ics')
-    expect(deps.writes[0]?.contents).toContain('BEGIN:VCALENDAR')
+    expect(deps.deliveries).toHaveLength(1)
+    expect(deps.deliveries[0]?.defaultName).toBe('comic-con.ics')
+    expect(deps.deliveries[0]?.contents).toContain('BEGIN:VCALENDAR')
   })
 
   it('resolves UIDs against main’s dataset — the renderer never supplies event bodies', async () => {
@@ -53,8 +47,8 @@ describe('exportIcs', () => {
     // The renderer asks for one star; main decides what that UID actually is.
     await exportIcs({ uids: [events[2]!.uid] }, dataset(events), deps)
 
-    expect(deps.writes[0]?.contents).toContain(events[2]!.title)
-    expect(deps.writes[0]?.contents).not.toContain(events[0]!.title)
+    expect(deps.deliveries[0]?.contents).toContain(events[2]!.title)
+    expect(deps.deliveries[0]?.contents).not.toContain(events[0]!.title)
   })
 
   it('reports a starred UID that has left the dataset as a ghost', async () => {
@@ -77,7 +71,7 @@ describe('exportIcs', () => {
 
     expect(result.status).toBe('cancelled')
     expect(result.path).toBeNull()
-    expect(deps.writes).toEqual([])
+    expect(deps.deliveries).toHaveLength(1)
   })
 
   it('never opens a dialog when every star was excluded', async () => {
@@ -86,8 +80,7 @@ describe('exportIcs', () => {
     const result = await exportIcs({ uids: [dead.uid] }, dataset([dead]), deps)
 
     expect(result.status).toBe('empty')
-    expect(deps.prompts).toEqual([])
-    expect(deps.writes).toEqual([])
+    expect(deps.deliveries).toEqual([])
     expect(result.excluded.map((x) => x.reason)).toEqual(['cancelled'])
   })
 
@@ -104,7 +97,7 @@ describe('exportIcs', () => {
       deps
     )
 
-    expect(deps.prompts).toEqual(['comic-con-2026-07-25.ics'])
+    expect(deps.deliveries[0]?.defaultName).toBe('comic-con-2026-07-25.ics')
     expect(result.exported).toBe(1)
     expect(result.excluded.map((x) => x.reason)).toEqual(['other-day'])
   })
@@ -112,8 +105,7 @@ describe('exportIcs', () => {
   it('surfaces a write failure instead of claiming a save', async () => {
     const events = saturdaySessions()
     const deps: IcsExportDeps = {
-      showSaveDialog: async () => '/nope/stars.ics',
-      write: async () => {
+      deliver: async () => {
         throw new Error('EACCES: permission denied')
       }
     }

@@ -3,7 +3,7 @@
 /**
  * The chat tab end to end against a faked bridge: key gating, a turn that
  * drives the filter, event references, and a proposed action that only commits
- * on a tap. The real spine and filter engine run; only window.api is faked.
+ * on a tap. The real spine and filter engine run; only the platform bridge is faked.
  */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -13,6 +13,8 @@ import { ChatTab } from '../ChatTab'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import type { ChatResponse, KeyStatus } from '@shared/chat'
 import type { StarRecord } from '@shared/stars'
+import { clearFakeBridge, installFakeBridge, type FakePlatformBridge } from '../../test/fakeBridge'
+import type { PlatformBridge } from '@shared/bridge/types'
 
 vi.mock('@data/enrichment.json', () => ({
   default: {
@@ -54,18 +56,21 @@ const HORROR_FILTER = { chips: [{ dimension: 'genre', value: 'Horror' }], text: 
 
 let persisted: StarRecord[]
 let keyStatus: KeyStatus
-let chat: ReturnType<typeof vi.fn>
-let syncDataset: ReturnType<typeof vi.fn>
-let setKey: ReturnType<typeof vi.fn>
+let chat: FakePlatformBridge['llm']['chat']
+let syncDataset: FakePlatformBridge['llm']['syncDataset']
+let setKey: FakePlatformBridge['llm']['setKey']
 let deltaCb: ((d: { text?: string; status?: string }) => void) | null
+let api: FakePlatformBridge
 
 beforeEach(() => {
   persisted = []
   keyStatus = { anthropic: true, openai: false, openrouter: false }
-  chat = vi.fn()
-  syncDataset = vi.fn().mockResolvedValue({ received: 2 })
-  setKey = vi.fn((provider: string) => Promise.resolve({ ok: true, status: { ...keyStatus, [provider]: true } }))
-  ;(window as unknown as { api: unknown }).api = {
+  chat = vi.fn<PlatformBridge['llm']['chat']>()
+  syncDataset = vi.fn<PlatformBridge['llm']['syncDataset']>().mockResolvedValue({ received: 2 })
+  setKey = vi.fn<PlatformBridge['llm']['setKey']>((provider) =>
+    Promise.resolve({ ok: true, status: { ...keyStatus, [provider]: true } }),
+  )
+  api = installFakeBridge({
     schedule: { refresh: vi.fn().mockResolvedValue(projection()) },
     changes: { acknowledge: vi.fn().mockResolvedValue({}) },
     stars: {
@@ -91,13 +96,13 @@ beforeEach(() => {
         }
       }),
     },
-  }
+  })
 })
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { api?: unknown }).api
+  clearFakeBridge()
 })
 
 function FilterProbe() {
@@ -301,7 +306,7 @@ describe('ChatTab', () => {
 
     const stop = await screen.findByRole('button', { name: 'Stop' })
     fireEvent.click(stop)
-    expect((window as unknown as { api: { llm: { cancelChat: ReturnType<typeof vi.fn> } } }).api.llm.cancelChat).toHaveBeenCalled()
+    expect(api.llm.cancelChat).toHaveBeenCalled()
 
     // Settle the pending call as aborted so nothing dangles; no error banner.
     await act(async () => {
@@ -379,7 +384,7 @@ describe('ChatTab', () => {
     await sendMessage('star both')
 
     const confirm = await screen.findByRole('button', { name: /Star 2/ })
-    const setSpy = (window as unknown as { api: { stars: { set: ReturnType<typeof vi.fn> } } }).api.stars.set
+    const setSpy = api.stars.set
     setSpy.mockClear()
     fireEvent.click(confirm)
 
@@ -445,7 +450,7 @@ describe('ChatTab', () => {
     const DUP2 = event('dup-2', { title: 'Spotlight Panel', start: `${SAT}T09:00:00-07:00` })
     const DUP3 = event('dup-3', { title: 'Spotlight Panel', start: null })
     const UNIQUE = event('unique-1', { title: 'Q&A: Where Do We Go? (Part 1)' })
-    ;(window as unknown as { api: { schedule: { refresh: unknown } } }).api.schedule.refresh = vi
+    api.schedule.refresh = vi
       .fn()
       .mockResolvedValue({ events: [DUP1, DUP2, DUP3, UNIQUE], changes: {}, fetchedAt: '2026-07-20T18:00:00.000Z', stale: false })
     chat.mockResolvedValue({
@@ -478,7 +483,7 @@ describe('ChatTab', () => {
   })
 
   it('keeps an export card actionable when the save dialog is cancelled', async () => {
-    ;(window as unknown as { api: { export: { ics: unknown } } }).api.export.ics = vi
+    api.export.ics = vi
       .fn()
       .mockResolvedValue({ status: 'cancelled', path: null, exported: 0, excluded: [] })
     chat.mockResolvedValue({
@@ -501,7 +506,7 @@ describe('ChatTab', () => {
   })
 
   it('marks an empty export done with a distinct note', async () => {
-    ;(window as unknown as { api: { export: { ics: unknown } } }).api.export.ics = vi
+    api.export.ics = vi
       .fn()
       .mockResolvedValue({ status: 'empty', path: null, exported: 0, excluded: [] })
     chat.mockResolvedValue({

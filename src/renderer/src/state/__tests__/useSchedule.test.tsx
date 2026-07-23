@@ -17,6 +17,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SpineProvider } from '../spine'
 import { useSchedule, type ScheduleModel } from '../useSchedule'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
+import type { StarRecord } from '@shared/stars'
+import { clearFakeBridge, installFakeBridge } from '../../test/fakeBridge'
 
 /** sha256('') truncated to 16 hex chars — the fixture events carry empty
  *  descriptions, so this is the hash the staleness pass must agree with. */
@@ -72,15 +74,18 @@ const projection = (): DatasetProjection => ({
 })
 
 beforeEach(() => {
-  ;(window as unknown as { api: unknown }).api = {
+  installFakeBridge({
     schedule: { refresh: vi.fn(async () => projection()) },
     changes: { acknowledge: vi.fn(async () => ({})) },
-    stars: { get: vi.fn(async () => []), set: vi.fn(async (n: unknown[]) => n) },
+    stars: { get: vi.fn(async () => []), set: vi.fn(async (n: StarRecord[]) => n) },
     export: { ics: vi.fn() },
-  }
+  })
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  clearFakeBridge()
+})
 
 describe('useSchedule — the shared corpus pass', () => {
   it('hands two instances the same Layer-1 derivation, by identity', async () => {

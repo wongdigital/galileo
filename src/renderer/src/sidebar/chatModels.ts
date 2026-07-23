@@ -45,6 +45,3 @@ export function saveModels(models: Record<ProviderId, string>): void {
     // the choice just will not survive a restart.
   }
 }
-
-export const bridge = () =>
-  typeof window !== 'undefined' && window.api?.llm ? window.api.llm : null

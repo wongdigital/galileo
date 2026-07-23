@@ -15,6 +15,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SpineProvider, useSpine, type SpineState } from '../spine'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import type { StarRecord } from '@shared/stars'
+import {
+  clearFakeBridge,
+  installFakeBridge,
+  installMissingBridge,
+  type FakePlatformBridge,
+} from '../../test/fakeBridge'
 
 function event(uid: string, partial: Partial<ScheduleEvent> = {}): ScheduleEvent {
   return {
@@ -44,14 +50,7 @@ function projection(partial: Partial<DatasetProjection> = {}): DatasetProjection
   }
 }
 
-interface Api {
-  schedule: { refresh: ReturnType<typeof vi.fn> }
-  changes: { acknowledge: ReturnType<typeof vi.fn> }
-  stars: { get: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn> }
-  export: { ics: ReturnType<typeof vi.fn> }
-}
-
-let api: Api
+let api: FakePlatformBridge
 let spine: SpineState
 
 function Probe() {
@@ -71,19 +70,17 @@ async function mount() {
 }
 
 beforeEach(() => {
-  api = {
+  api = installFakeBridge({
     schedule: { refresh: vi.fn().mockResolvedValue(projection()) },
     changes: { acknowledge: vi.fn().mockResolvedValue({}) },
     stars: { get: vi.fn().mockResolvedValue([]), set: vi.fn() },
-    export: { ics: vi.fn() },
-  }
+  })
   api.stars.set.mockImplementation((stars: StarRecord[]) => Promise.resolve(stars))
-  ;(window as unknown as { api: Api }).api = api
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
-  delete (window as unknown as { api?: Api }).api
+  clearFakeBridge()
 })
 
 describe('initial load', () => {
@@ -96,6 +93,14 @@ describe('initial load', () => {
     expect(api.schedule.refresh).toHaveBeenCalledTimes(1)
     expect(spine.dataset?.events).toHaveLength(2)
     await waitFor(() => expect(spine.stars.map((s) => s.uid)).toEqual(['a']))
+  })
+
+  it('preserves the no-shell error when no platform bridge is present', async () => {
+    installMissingBridge()
+    await mount()
+
+    expect(spine.dataset).toBeNull()
+    expect(spine.refreshError).toBe('No Electron bridge — the app is running outside its shell.')
   })
 })
 

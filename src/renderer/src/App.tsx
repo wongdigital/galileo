@@ -9,6 +9,7 @@ import { useSlidingIndicator } from './components/useSlidingIndicator'
 import { useTheme } from './state/theme'
 import { ScheduleView } from './views/schedule/ScheduleView'
 import { GraphView } from './views/graph/GraphView'
+import { bridge } from './bridge'
 
 /**
  * App frame: title bar, view toggle, sidebar, view surface.
@@ -69,7 +70,7 @@ function ExportButton() {
       : `Export ${stars.length.toLocaleString()} starred event${stars.length === 1 ? '' : 's'} to calendar (.ics)`
 
   const exportStarred = async (): Promise<void> => {
-    const api = typeof window !== 'undefined' ? window.api : null
+    const api = bridge()
     if (!api) return
     const result = (await api.export.ics({ uids: stars.map((s) => s.uid) })) as {
       status?: string

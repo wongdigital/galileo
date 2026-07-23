@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { PROVIDERS, type KeyStatus, type ModelChoice, type ProviderId } from '@shared/chat'
-import { PROVIDER_LABEL, bridge } from './chatModels'
+import { PROVIDER_LABEL } from './chatModels'
+import { bridge } from '../bridge'
 
 /** The selects run `appearance-none` — Chromium's built-in arrow is the one
  *  browser-drawn mark in the app, and the stock-look audit (U9) evicts it.
@@ -56,7 +57,7 @@ export function KeySetup({
     setBusy(true)
     setNote(null)
     try {
-      const api = bridge()
+      const api = bridge()?.llm
       if (api) {
         let status: KeyStatus | null = null
         let failure: string | null = null
@@ -82,7 +83,7 @@ export function KeySetup({
   }
 
   const clear = async () => {
-    const api = bridge()
+    const api = bridge()?.llm
     if (!api) return
     setBusy(true)
     try {

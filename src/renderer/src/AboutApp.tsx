@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { APP_NAME, APP_TAGLINE, APP_AUTHOR, APP_AUTHOR_URL, GITHUB_URL } from '@shared/app'
 // Tracks the real shipped icon, so swapping build/icon.png updates this too.
 import appIcon from '../../../build/icon.png'
+import { bridge } from './bridge'
 
 /**
  * The About window's body — the whole document, not a modal. It fills its own
@@ -13,7 +14,7 @@ export function AboutApp() {
   const [version, setVersion] = useState<string | null>(null)
 
   useEffect(() => {
-    const api = typeof window !== 'undefined' ? window.api : null
+    const api = bridge()
     if (!api?.app?.version) return
     void api.app.version().then(setVersion).catch(() => setVersion(null))
   }, [])

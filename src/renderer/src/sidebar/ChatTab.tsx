@@ -28,9 +28,10 @@ import {
   type ProviderId,
 } from '@shared/chat'
 import type { ScheduleEvent } from '@shared/schedule'
-import { MODELS, bridge, defaultModels, loadModels, saveModels } from './chatModels'
+import { MODELS, defaultModels, loadModels, saveModels } from './chatModels'
 import { Bubble, type ChatEntry } from './ChatBubble'
 import { KeySetup } from './ChatKeySetup'
+import { bridge } from '../bridge'
 
 export function ChatTab() {
   const spine = useSpine()
@@ -60,7 +61,7 @@ export function ChatTab() {
   // Load which providers have a key; pick the first that does, and open setup
   // straight away when none do — there is nothing else to do until a key exists.
   useEffect(() => {
-    const api = bridge()
+    const api = bridge()?.llm
     if (!api) return
     void api.keyStatus().then((status) => {
       setKeyStatus(status)
@@ -77,7 +78,7 @@ export function ChatTab() {
   // the pre-enrichment index would answer "who is Scott Snyder?" with a
   // confident, false "not in this schedule".
   useEffect(() => {
-    const api = bridge()
+    const api = bridge()?.llm
     if (!api || candidates.length === 0) return
     void api.syncDataset(candidates).then((result) => {
       if ((result?.received ?? 0) > 0 && enrichmentReady) setDatasetReady(true)
@@ -96,7 +97,7 @@ export function ChatTab() {
   // once their key exists (their /models endpoint needs it). A miss leaves the
   // curated fallback in place.
   const refreshModels = useCallback(async (target: ProviderId) => {
-    const api = bridge()
+    const api = bridge()?.llm
     if (!api) return
     const list = await api.models(target)
     if (list.length > 0) setLiveModels((prev) => ({ ...prev, [target]: list }))
@@ -135,7 +136,7 @@ export function ChatTab() {
   const send = useCallback(async () => {
     const text = input.trim()
     if (!text || sending) return
-    const api = bridge()
+    const api = bridge()?.llm
     if (!api) {
       setError('The app is running outside its Electron shell — chat is unavailable.')
       return
@@ -267,7 +268,7 @@ export function ChatTab() {
           note = 'Some stars did not save — try again.'
         }
       } else {
-        const api = window.api
+        const api = bridge()
         const result = api ? await api.export.ics({ uids: action.events.map((e) => e.uid) }) : null
         const status = (result as { status?: string } | null)?.status
         if (status === 'saved') {
@@ -294,7 +295,7 @@ export function ChatTab() {
   }, [])
 
   const stop = useCallback(() => {
-    void bridge()?.cancelChat()
+    void bridge()?.llm.cancelChat()
   }, [])
 
   // Key presence is three-valued: unknown until the first status load, then

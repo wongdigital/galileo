@@ -19,6 +19,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import type { StarRecord } from '@shared/stars'
+import { clearFakeBridge, installFakeBridge, type FakePlatformBridge } from '../test/fakeBridge'
+import type { PlatformBridge } from '@shared/bridge/types'
 
 /** The event card loads the enrichment index for its metadata sections; an
  *  empty index keeps the 1.2 MB live file out of the suite. */
@@ -105,7 +107,8 @@ function projection(partial: Partial<DatasetProjection> = {}): DatasetProjection
 }
 
 let persisted: StarRecord[] = []
-let refresh: ReturnType<typeof vi.fn>
+let refresh: FakePlatformBridge['schedule']['refresh']
+let api: FakePlatformBridge
 
 /**
  * jsdom reports every element as zero-sized and has no ResizeObserver, so a
@@ -138,8 +141,8 @@ function giveTheDomASize(): void {
 beforeEach(() => {
   giveTheDomASize()
   persisted = []
-  refresh = vi.fn().mockResolvedValue(projection())
-  ;(window as unknown as { api: unknown }).api = {
+  refresh = vi.fn<PlatformBridge['schedule']['refresh']>().mockResolvedValue(projection())
+  api = installFakeBridge({
     schedule: { refresh },
     changes: { acknowledge: vi.fn().mockResolvedValue({}) },
     stars: {
@@ -151,7 +154,7 @@ beforeEach(() => {
       }),
     },
     export: { ics: vi.fn() },
-  }
+  })
 })
 
 afterEach(() => {
@@ -160,7 +163,7 @@ afterEach(() => {
   // document and queries start matching the previous test's DOM.
   cleanup()
   vi.restoreAllMocks()
-  delete (window as unknown as { api?: unknown }).api
+  clearFakeBridge()
 })
 
 async function mount() {
@@ -341,8 +344,14 @@ describe('the titlebar export button', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^Star Drawing Monsters/ }))
     })
-    const ics = (window.api as unknown as { export: { ics: ReturnType<typeof vi.fn> } }).export.ics
-    ics.mockResolvedValue({ status: 'saved', count: 1 })
+    const { ics } = api.export
+    ics.mockResolvedValue({
+      status: 'saved',
+      path: '/tmp/comic-con.ics',
+      exported: 1,
+      excluded: [],
+      sanitized: [],
+    })
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Export 1 starred event to calendar/ }))

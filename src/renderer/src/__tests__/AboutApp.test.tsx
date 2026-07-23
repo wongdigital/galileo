@@ -10,10 +10,11 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AboutApp } from '../AboutApp'
 import { APP_AUTHOR, APP_AUTHOR_URL, APP_NAME, GITHUB_URL } from '@shared/app'
+import { clearFakeBridge, installFakeBridge, installMissingBridge } from '../test/fakeBridge'
 
 afterEach(() => {
   cleanup()
-  delete (window as unknown as { api?: unknown }).api
+  clearFakeBridge()
 })
 
 describe('AboutApp', () => {
@@ -34,9 +35,9 @@ describe('AboutApp', () => {
   })
 
   it('shows a dash until the version resolves, then the version from main', async () => {
-    ;(window as unknown as { api: unknown }).api = {
+    installFakeBridge({
       app: { version: vi.fn().mockResolvedValue('2.5.0') },
-    }
+    })
     render(<AboutApp />)
 
     // Before the promise resolves.
@@ -46,6 +47,7 @@ describe('AboutApp', () => {
   })
 
   it('falls back to a dash when no bridge is present', () => {
+    installMissingBridge()
     render(<AboutApp />)
     expect(screen.getByText('—')).toBeTruthy()
   })
