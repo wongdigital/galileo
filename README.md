@@ -72,31 +72,67 @@ Each instance fetches raw schedule data itself at runtime and joins it against t
 
 ### Setup
 
+Requires Node.js 22.12 or newer.
+
 ```sh
 npm install
 node node_modules/electron/install.js   # if Electron's binary postinstall was skipped
 npm run fetch                           # pull today's schedule
-npm run dev                             # launch the app
-npm run dev:web                         # launch the browser renderer
+npm run dev                             # launch the Electron app
+npm run dev:web                         # launch the renderer in a browser
 ```
 
 Vite is pinned to `^7` and `@vitejs/plugin-react` to `^5`: electron-vite 5 peers Vite ≤7, while current defaults resolve Vite 8.
 
-### Building the apps
+### Development targets
+
+Galileo uses one React renderer behind a platform bridge, with separate build paths for each host:
+
+| Target | Host | Development command | Build output |
+| --- | --- | --- | --- |
+| macOS and Windows | Electron | `npm run dev` | `npm run build` compiles the Electron main, preload, and renderer bundles into `out/` |
+| Browser | Vite | `npm run dev:web` | `npm run build:web` writes the portable renderer to `dist-web/` |
+| iPad | Capacitor 8 + iOS | `npm run ios:sync`, then run from Xcode | Xcode builds the committed iPad-only project in `ios/` |
+
+The browser target is a development surface and the web payload Capacitor wraps; it is not currently a separately published web app.
+
+### Building the Electron desktop apps
 
 ```sh
-npm run dist     # electron-vite build + electron-builder → dist/Galileo-<version>-arm64.dmg (+ .zip)
-npm run dist:win # electron-vite build + electron-builder → dist/Galileo-<version>-setup.exe (NSIS)
-npm run pack     # unpacked .app in dist/ for a quick local check, no dmg
-npm run ios:sync # build the web renderer and sync the committed Capacitor iOS project
-npm run ios:open # open the iOS project in Xcode
+npm run build    # compile Electron into out/, without packaging
+npm run pack     # unpacked macOS app in dist/ for a quick local check
+npm run dist     # macOS arm64 dmg + zip in dist/
+npm run dist:win # Windows x64 NSIS installer in dist/
 ```
 
-`npm run dist` produces an Apple Silicon macOS build. Signing and notarization are opt-in: with no Apple credentials in the environment the output is unsigned (ad-hoc), which is fine for local use. For a release, install a "Developer ID Application" cert in the keychain and export `APPLE_API_KEY` (path to an App Store Connect API `.p8`), `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`; the same `npm run dist` then signs and notarizes.
+`npm run dist` produces an Apple Silicon macOS build. Signing and notarization are opt-in: with no Apple credentials in the environment the output is ad-hoc signed and carries an `-unsigned` filename suffix, which is fine for local use. For a release, install a "Developer ID Application" cert in the keychain and export `APPLE_API_KEY` (path to an App Store Connect API `.p8`), `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`; the same `npm run dist` then signs and notarizes.
 
 `npm run dist:win` produces a Windows x64 NSIS installer. It runs on Windows (or any host with the electron-builder Windows toolchain); the practical path is CI. The build is unsigned — no Authenticode cert is wired up yet, so Windows SmartScreen warns on first run.
 
 The Windows installer is built in CI: `.github/workflows/release-windows.yml` runs on a `windows-latest` runner when you push a version tag (e.g. `git tag v0.1.0 && git push --tags`), builds the NSIS installer, and uploads it to a **draft** GitHub [Release](https://github.com/wongdigital/galileo/releases) — review the draft and publish it yourself. The macOS build is currently produced locally with `npm run dist` (signed via the Apple env vars above).
+
+### Building the Capacitor iPad app
+
+The native target requires Xcode 26 or newer and deploys to iPadOS 15 or newer. The committed `ios/` project uses Swift Package Manager and targets iPad only.
+
+```sh
+npm run ios:sync # build dist-web/, copy it into the native shell, and sync native dependencies
+npm run ios:open # open the App project in Xcode
+```
+
+In Xcode, select the `App` scheme and an iPad simulator or connected iPad, then run. A physical device needs an Apple development team selected under Signing & Capabilities. The resulting app is currently a developer-signed local install; App Store distribution is not configured yet.
+
+Run `npm run ios:sync` after renderer changes or Capacitor dependency/configuration changes. The generated `ios/App/App/public/` payload and its copied `capacitor.config.json` are gitignored; commit the source `capacitor.config.json` and native project changes, not the generated copies.
+
+### Verification
+
+```sh
+npm run typecheck
+npm test
+npm run lint
+npm run build
+npm run build:web
+```
 
 ### Data pipeline
 
