@@ -79,26 +79,67 @@ export class StarSlots {
  * artifact is serialized through one queue so concurrent setting writes do
  * not overwrite one another with stale read-modify-write snapshots. */
 export class SettingsSlots {
-  private writes: Promise<void> = Promise.resolve()
+  private pending = new Map<string, PendingSetting>()
+  private draining: Promise<void> | null = null
 
   constructor(private readonly store: JsonStore) {}
 
   async get(name: string): Promise<unknown | null> {
     validateSettingName(name)
-    await this.writes.catch(() => {})
+    await this.draining
     const values = asSettings(await this.store.read(SETTINGS_NAME))
     return Object.hasOwn(values, name) ? values[name] : null
   }
 
   set(name: string, value: unknown): Promise<void> {
     validateSettingName(name)
-    const operation = this.writes.catch(() => {}).then(async () => {
-      const values = asSettings(await this.store.read(SETTINGS_NAME))
-      await this.store.replace(SETTINGS_NAME, { ...values, [name]: value })
+    const operation = new Promise<void>((resolve, reject) => {
+      const current = this.pending.get(name)
+      if (current) {
+        current.value = value
+        current.waiters.push({ resolve, reject })
+      } else {
+        this.pending.set(name, { value, waiters: [{ resolve, reject }] })
+      }
     })
-    this.writes = operation
+
+    if (!this.draining) {
+      this.draining = Promise.resolve()
+        .then(() => this.drain())
+        .finally(() => {
+          this.draining = null
+        })
+    }
     return operation
   }
+
+  private async drain(): Promise<void> {
+    while (this.pending.size > 0) {
+      const batch = this.pending
+      this.pending = new Map()
+      try {
+        const values = asSettings(await this.store.read(SETTINGS_NAME))
+        const merged = { ...values }
+        for (const [name, pending] of batch) merged[name] = pending.value
+        await this.store.replace(SETTINGS_NAME, merged)
+        for (const pending of batch.values()) {
+          for (const waiter of pending.waiters) waiter.resolve()
+        }
+      } catch (error) {
+        for (const pending of batch.values()) {
+          for (const waiter of pending.waiters) waiter.reject(error)
+        }
+      }
+    }
+  }
+}
+
+interface PendingSetting {
+  value: unknown
+  waiters: Array<{
+    resolve: () => void
+    reject: (reason?: unknown) => void
+  }>
 }
 
 function starsFromGeneration(raw: unknown): StarRecord[] {

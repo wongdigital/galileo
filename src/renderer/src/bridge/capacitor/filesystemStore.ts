@@ -1,4 +1,10 @@
-import type { JsonStore } from '@shared/storage/jsonStore'
+import {
+  isValidJsonArtifactName,
+  parseJson,
+  stringifyJson,
+  validateJsonArtifactName,
+  type JsonStore,
+} from '@shared/storage/jsonStore'
 
 export type FilesystemDirectory = 'DATA' | 'LIBRARY_NO_CLOUD'
 
@@ -61,17 +67,17 @@ export class CapacitorFilesystemStore implements JsonStore {
   }
 
   async read(name: string): Promise<unknown | null> {
-    validateArtifactName(name)
+    validateJsonArtifactName(name)
     await this.init()
     await (this.writes.get(name) ?? Promise.resolve()).catch(() => {})
     return this.readRecovering(name)
   }
 
   replace(name: string, value: unknown): Promise<void> {
-    validateArtifactName(name)
+    validateJsonArtifactName(name)
     let data: string
     try {
-      data = stringify(value)
+      data = stringifyJson(value)
     } catch (error) {
       return Promise.reject(error)
     }
@@ -137,8 +143,8 @@ export class CapacitorFilesystemStore implements JsonStore {
       }
       const target = artifactPath(candidate.name)
       const temp = `${target}${TEMP_SUFFIX}`
-      const current = parse(await this.readText(target, candidate.directory))
-      const pending = parse(await this.readText(temp, candidate.directory))
+      const current = parseJson(await this.readText(target, candidate.directory))
+      const pending = parseJson(await this.readText(temp, candidate.directory))
       if (!current.ok && pending.ok) {
         await this.deleteIfPresent(target, candidate.directory)
         await this.filesystem.rename({
@@ -165,13 +171,13 @@ export class CapacitorFilesystemStore implements JsonStore {
     const directory = artifactDirectory(name)
     const target = artifactPath(name)
     const temp = `${target}${TEMP_SUFFIX}`
-    const current = parse(await this.readText(target, directory))
+    const current = parseJson(await this.readText(target, directory))
     if (current.ok) {
       await this.deleteIfPresent(temp, directory)
       return current.value
     }
 
-    const pending = parse(await this.readText(temp, directory))
+    const pending = parseJson(await this.readText(temp, directory))
     if (!pending.ok) {
       await this.deleteIfPresent(temp, directory)
       return null
@@ -221,32 +227,7 @@ function artifactPath(name: string): string {
 }
 
 function isValidArtifactName(name: string): boolean {
-  return (
-    name.length > 0 &&
-    name !== '.' &&
-    name !== '..' &&
-    !name.includes('/') &&
-    !name.includes('\\')
-  )
-}
-
-function validateArtifactName(name: string): void {
-  if (!isValidArtifactName(name)) throw new Error(`Invalid JSON artifact name: ${name}`)
-}
-
-function stringify(value: unknown): string {
-  const data = JSON.stringify(value)
-  if (data === undefined) throw new TypeError('JsonStore cannot persist undefined')
-  return data
-}
-
-function parse(value: string | null): { ok: true; value: unknown } | { ok: false } {
-  if (value === null) return { ok: false }
-  try {
-    return { ok: true, value: JSON.parse(value) }
-  } catch {
-    return { ok: false }
-  }
+  return isValidJsonArtifactName(name)
 }
 
 function errorCode(error: unknown): string {

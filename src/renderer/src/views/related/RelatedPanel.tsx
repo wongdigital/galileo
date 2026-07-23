@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { eventNodeId } from '@shared/graph'
+import { eventNodeId, eventUidOf } from '@shared/graph'
 import { useSpine } from '@renderer/state/spine'
 import {
   useEntityMap,
@@ -88,49 +88,45 @@ export function RelatedPanel({ focusHeading = false }: { focusHeading?: boolean 
   const selectedEvent = selectedUid ? eventsByUid.get(selectedUid) : undefined
   const focusedHub = focusedEntityId ? hubsById.get(focusedEntityId) : undefined
 
+  const neighbors = useMemo(() => {
+    const byNode = new Map<string, string[]>()
+    for (const link of map.links) {
+      const sourceNeighbors = byNode.get(link.source)
+      if (sourceNeighbors) sourceNeighbors.push(link.target)
+      else byNode.set(link.source, [link.target])
+      const targetNeighbors = byNode.get(link.target)
+      if (targetNeighbors) targetNeighbors.push(link.source)
+      else byNode.set(link.target, [link.source])
+    }
+    return byNode
+  }, [map.links])
+
   const relatedHubs = useMemo(() => {
     if (!selectedUid) return []
-    const source = eventNodeId(selectedUid)
-    const ids = map.links
-      .filter((link) => link.source === source)
-      .map((link) => link.target)
+    const ids = neighbors.get(eventNodeId(selectedUid)) ?? []
     return ids.flatMap((id) => {
       const hub = hubsById.get(id)
       return hub ? [hub] : []
     }).sort(byDegreeThenLabel)
-  }, [hubsById, map.links, selectedUid])
+  }, [hubsById, neighbors, selectedUid])
 
   const relatedEvents = useMemo(() => {
     if (!focusedEntityId) return []
-    const uids = map.links
-      .filter((link) => link.target === focusedEntityId)
-      .map((link) => link.source.replace(/^event:/, ''))
+    const uids = (neighbors.get(focusedEntityId) ?? []).map(eventUidOf)
     return uids.flatMap((uid) => {
       const event = eventsByUid.get(uid)
       return event ? [event] : []
     })
-  }, [eventsByUid, focusedEntityId, map.links])
+  }, [eventsByUid, focusedEntityId, neighbors])
 
   const topHubs = useMemo(
     () => [...map.hubs].sort(byDegreeThenLabel).slice(0, TOP_HUB_LIMIT),
     [map.hubs],
   )
 
-  const chooseHub = (id: string): void => {
-    setSelectedUid(null)
-    setFocusedEntityId(id)
-  }
-
-  const chooseEvent = (uid: string): void => {
-    setFocusedEntityId(null)
-    setSelectedUid(uid)
-  }
-
-  const heading = focusedHub
-    ? `Related to ${focusedHub.label}`
-    : selectedEvent
-      ? `Related to ${selectedEvent.title}`
-      : 'Related'
+  let heading = 'Related'
+  if (focusedHub) heading = `Related to ${focusedHub.label}`
+  else if (selectedEvent) heading = `Related to ${selectedEvent.title}`
 
   return (
     <section
@@ -163,7 +159,7 @@ export function RelatedPanel({ focusHeading = false }: { focusHeading?: boolean 
               <ul className="mt-5 space-y-2">
                 {relatedEvents.map((event) => (
                   <li key={event.uid}>
-                    <EventButton event={event} onSelect={chooseEvent} />
+                    <EventButton event={event} onSelect={setSelectedUid} />
                   </li>
                 ))}
               </ul>
@@ -182,7 +178,7 @@ export function RelatedPanel({ focusHeading = false }: { focusHeading?: boolean 
               <ul className="mt-5 space-y-2">
                 {relatedHubs.map((hub) => (
                   <li key={hub.id}>
-                    <HubButton hub={hub} onSelect={chooseHub} />
+                    <HubButton hub={hub} onSelect={setFocusedEntityId} />
                   </li>
                 ))}
               </ul>
@@ -206,7 +202,7 @@ export function RelatedPanel({ focusHeading = false }: { focusHeading?: boolean 
                 <ul className="mt-2 space-y-2">
                   {topHubs.map((hub) => (
                     <li key={hub.id}>
-                      <HubButton hub={hub} onSelect={chooseHub} />
+                      <HubButton hub={hub} onSelect={setFocusedEntityId} />
                     </li>
                   ))}
                 </ul>

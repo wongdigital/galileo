@@ -6,7 +6,7 @@
  * own concerns here.
  */
 
-import { MODELS, PROVIDERS, type ProviderId } from '@shared/chat'
+import { DEFAULT_MODEL, MODELS, PROVIDERS, type ProviderId } from '@shared/chat'
 import { bridge } from '../bridge'
 
 export { MODELS }
@@ -22,7 +22,7 @@ export { PROVIDER_LABEL }
 const MODEL_SETTING = 'chat.models'
 
 export function defaultModels(): Record<ProviderId, string> {
-  return { anthropic: MODELS.anthropic[0]!.id, openai: MODELS.openai[0]!.id, openrouter: MODELS.openrouter[0]!.id }
+  return { ...DEFAULT_MODEL }
 }
 
 export async function loadModels(): Promise<Record<ProviderId, string>> {

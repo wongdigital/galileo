@@ -119,7 +119,7 @@ describe('RelatedPanel', () => {
     fireEvent.click(starWars)
 
     expect(state.setFocusedEntityId).toHaveBeenLastCalledWith('ip:star-wars')
-    expect(state.setSelectedUid).toHaveBeenCalledWith(null)
+    expect(state.setSelectedUid).not.toHaveBeenCalled()
   })
 
   it('lists a focused entity’s events and keeps selection mutually exclusive', () => {
@@ -132,6 +132,6 @@ describe('RelatedPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Panel Two/ }))
     expect(state.setSelectedUid).toHaveBeenCalledWith('p2')
-    expect(state.setFocusedEntityId).toHaveBeenCalledWith(null)
+    expect(state.setFocusedEntityId).not.toHaveBeenCalled()
   })
 })

@@ -80,6 +80,30 @@ function formatWhen(iso: string | null): string | null {
 export function buildTools(ctx: ToolContext, capture: TurnCapture) {
   const eventByUid = new Map(ctx.events.map((event) => [event.uid, event]))
   const candByUid = new Map(ctx.candidates.map((candidate) => [candidate.uid, candidate]))
+  const valueSets = new Map<string, Set<string>>()
+  for (const candidate of ctx.candidates) {
+    for (const [dimension, values] of Object.entries(candidate.dimensions)) {
+      let set = valueSets.get(dimension)
+      if (!set) {
+        set = new Set()
+        valueSets.set(dimension, set)
+      }
+      for (const value of values) set.add(value)
+    }
+  }
+  const facetIndexes = new Map(
+    [...valueSets].map(([dimension, set]) => {
+      const values = [...set]
+      const valuesByLabel = new Map<string, string[]>()
+      for (const value of values) {
+        const label = facetValueLabel(dimension, value)
+        const bucket = valuesByLabel.get(label)
+        if (bucket) bucket.push(value)
+        else valuesByLabel.set(label, [value])
+      }
+      return [dimension, { values, valuesByLabel }] as const
+    }),
+  )
 
   // Human names, not machine ids — whatever appears in a tool result is what
   // the model will quote in prose, and the user should never read
@@ -105,16 +129,6 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
   const toolRows = (uids: readonly string[]): (EventSummary & { when: string | null })[] =>
     uids.map(toolRow).filter((r): r is EventSummary & { when: string | null } => r !== null)
 
-  /** Distinct values present in the corpus for a dimension — the pool
-   *  `resolveFacetValue` maps a loose model token onto. */
-  const valuesFor = (dimension: string): string[] => {
-    const set = new Set<string>()
-    for (const candidate of ctx.candidates) {
-      for (const value of candidate.dimensions[dimension] ?? []) set.add(value)
-    }
-    return [...set]
-  }
-
   // Mark uids linkable — deduped, capped — so the model's bolded names resolve
   // to cards without a broad search flooding the transcript.
   const markLinkable = (uids: readonly string[]): void => {
@@ -131,16 +145,11 @@ export function buildTools(ctx: ToolContext, capture: TurnCapture) {
    * ('scifi-fantasy'), so a label echoed back as a chip value must still land.
    */
   const resolveValue = (dimension: string, requested: string): string | null => {
-    const values = valuesFor(dimension)
+    const index = facetIndexes.get(dimension)
+    const values = index?.values ?? []
     const direct = resolveFacetValue(requested, values)
     if (direct) return direct
-    const valuesByLabel = new Map<string, string[]>()
-    for (const value of values) {
-      const label = facetValueLabel(dimension, value)
-      const bucket = valuesByLabel.get(label)
-      if (bucket) bucket.push(value)
-      else valuesByLabel.set(label, [value])
-    }
+    const valuesByLabel = index?.valuesByLabel ?? new Map<string, string[]>()
     const label = resolveFacetValue(requested, [...valuesByLabel.keys()])
     const hits = label ? (valuesByLabel.get(label) ?? []) : []
     return hits.length === 1 ? hits[0]! : null

@@ -1,7 +1,13 @@
 import { mkdirSync } from 'node:fs'
 import { readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { JsonStore } from '../shared/storage/jsonStore'
+import {
+  parseJson,
+  stringifyJson,
+  validateJsonArtifactName,
+  type JsonParseResult,
+  type JsonStore,
+} from '../shared/storage/jsonStore'
 
 /** Node's durable-json adapter. Schema decisions stay in shared slot logic. */
 export class NodeJsonStore implements JsonStore {
@@ -17,17 +23,17 @@ export class NodeJsonStore implements JsonStore {
   }
 
   async read(name: string): Promise<unknown | null> {
-    validateName(name)
+    validateJsonArtifactName(name)
     await this.ready
     await (this.writes.get(name) ?? Promise.resolve()).catch(() => {})
     return this.recoverName(name)
   }
 
   replace(name: string, value: unknown): Promise<void> {
-    validateName(name)
+    validateJsonArtifactName(name)
     let bytes: string
     try {
-      bytes = stringify(value)
+      bytes = stringifyJson(value)
     } catch (error) {
       return Promise.reject(error)
     }
@@ -108,21 +114,9 @@ export class NodeJsonStore implements JsonStore {
   }
 }
 
-function validateName(name: string): void {
-  if (name.length === 0 || name.includes('/') || name.includes('\\') || name === '.' || name === '..') {
-    throw new Error(`Invalid JSON artifact name: ${name}`)
-  }
-}
-
-function stringify(value: unknown): string {
-  const bytes = JSON.stringify(value)
-  if (bytes === undefined) throw new TypeError('JsonStore cannot persist undefined')
-  return bytes
-}
-
-async function parseFile(path: string): Promise<{ ok: true; value: unknown } | { ok: false }> {
+async function parseFile(path: string): Promise<JsonParseResult> {
   try {
-    return { ok: true, value: JSON.parse(await readFile(path, 'utf8')) }
+    return parseJson(await readFile(path, 'utf8'))
   } catch {
     return { ok: false }
   }

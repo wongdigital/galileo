@@ -1,12 +1,17 @@
 /** Electron stars composition over shared two-generation slot logic. */
 import { join } from 'node:path'
 import { normalizeStars, type StarRecord } from '../shared/stars'
+import type { JsonStore } from '../shared/storage/jsonStore'
 import { StarSlots } from '../shared/storage/slots'
 import { NodeJsonStore } from './nodeJsonStore'
 
 export class StarStore extends StarSlots {
-  constructor(baseDir: string) {
-    super(new NodeJsonStore(join(baseDir, 'schedule')))
+  constructor(baseDirOrStore: string | JsonStore) {
+    super(
+      typeof baseDirOrStore === 'string'
+        ? new NodeJsonStore(join(baseDirOrStore, 'schedule'))
+        : baseDirOrStore,
+    )
   }
 }
 

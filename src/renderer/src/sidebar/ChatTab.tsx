@@ -321,6 +321,14 @@ export function ChatTab() {
   // so neither startup nor a transient keychain lock prompts replacement.
   const keysMissing = keyStatus !== null && PROVIDERS.every((p) => keyStatus[p] === 'absent')
   const selectedKeyUnavailable = selectedKeyState === 'unreadable'
+  let composerPlaceholder = 'Ask, filter, or plan…'
+  if (!canChat) {
+    composerPlaceholder = selectedKeyUnavailable
+      ? 'API key temporarily unavailable'
+      : 'Add an API key to start'
+  } else if (!datasetReady) {
+    composerPlaceholder = 'Loading the schedule…'
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -382,11 +390,7 @@ export function ChatTab() {
           disabled={!canChat || !datasetReady || sending}
           rows={2}
           aria-label="Message the concierge"
-          placeholder={
-            !canChat
-              ? selectedKeyUnavailable ? 'API key temporarily unavailable' : 'Add an API key to start'
-              : !datasetReady ? 'Loading the schedule…' : 'Ask, filter, or plan…'
-          }
+          placeholder={composerPlaceholder}
           className="w-full resize-none rounded-md border border-line bg-ground-850 px-2.5 py-2 text-[12.5px] text-ink placeholder:text-ink-faint focus:border-lumen-dim focus:outline-none disabled:opacity-50"
         />
         <div className="mt-2 flex items-center justify-between">

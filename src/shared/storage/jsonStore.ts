@@ -20,3 +20,36 @@ export interface JsonStore {
   read(name: string): Promise<unknown | null>
   replace(name: string, value: unknown): Promise<void>
 }
+
+export type JsonParseResult =
+  | { ok: true; value: unknown }
+  | { ok: false }
+
+export function isValidJsonArtifactName(name: string): boolean {
+  return !(
+    name.length === 0 ||
+    name === '.' ||
+    name === '..' ||
+    name.includes('/') ||
+    name.includes('\\')
+  )
+}
+
+export function validateJsonArtifactName(name: string): void {
+  if (!isValidJsonArtifactName(name)) throw new Error(`Invalid JSON artifact name: ${name}`)
+}
+
+export function stringifyJson(value: unknown): string {
+  const bytes = JSON.stringify(value)
+  if (bytes === undefined) throw new TypeError('JsonStore cannot persist undefined')
+  return bytes
+}
+
+export function parseJson(value: string | null): JsonParseResult {
+  if (value === null) return { ok: false }
+  try {
+    return { ok: true, value: JSON.parse(value) }
+  } catch {
+    return { ok: false }
+  }
+}

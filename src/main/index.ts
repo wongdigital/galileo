@@ -141,10 +141,11 @@ app.whenReady().then(async () => {
     }
   }
 
-  store = new SnapshotStore(app.getPath('userData'))
-  stars = new StarStore(app.getPath('userData'))
+  const jsonStore = new NodeJsonStore(join(app.getPath('userData'), 'schedule'))
+  store = new SnapshotStore(jsonStore)
+  stars = new StarStore(jsonStore)
   keys = new KeyStore(app.getPath('userData'), safeStorage)
-  settings = new SettingsSlots(new NodeJsonStore(join(app.getPath('userData'), 'schedule')))
+  settings = new SettingsSlots(jsonStore)
   refreshDependencies = {
     site: SITE,
     slots: store,

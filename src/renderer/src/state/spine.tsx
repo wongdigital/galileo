@@ -259,12 +259,15 @@ export function SpineProvider({ children }: { children: ReactNode }) {
   const starManyFor = useCallback(
     async (events: ScheduleEvent[]): Promise<StarRecord[]> => {
       const now = new Date().toISOString()
-      let next = stars
+      const starredUids = new Set(stars.map((star) => star.uid))
+      const additions: StarRecord[] = []
       for (const event of events) {
-        if (!next.some((s) => s.uid === event.uid)) next = [...next, starFromEvent(event, now)]
+        if (starredUids.has(event.uid)) continue
+        starredUids.add(event.uid)
+        additions.push(starFromEvent(event, now))
       }
-      if (next === stars) return stars
-      return persistStars(next)
+      if (additions.length === 0) return stars
+      return persistStars([...stars, ...additions])
     },
     [persistStars, stars],
   )

@@ -68,9 +68,10 @@ beforeEach(() => {
   keyStatus = { anthropic: 'present', openai: 'absent', openrouter: 'absent' }
   chat = vi.fn<PlatformBridge['llm']['chat']>()
   syncDataset = vi.fn<PlatformBridge['llm']['syncDataset']>().mockResolvedValue({ received: 2 })
-  setKey = vi.fn<PlatformBridge['llm']['setKey']>((provider) =>
-    Promise.resolve({ ok: true, status: { ...keyStatus, [provider]: 'present' } }),
-  )
+  setKey = vi.fn<PlatformBridge['llm']['setKey']>((provider) => {
+    keyStatus = { ...keyStatus, [provider]: 'present' }
+    return Promise.resolve({ ok: true, status: keyStatus })
+  })
   api = installFakeBridge({
     schedule: { refresh: vi.fn().mockResolvedValue(projection()) },
     changes: { acknowledge: vi.fn().mockResolvedValue({}) },
@@ -236,6 +237,8 @@ describe('ChatTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(setKey).toHaveBeenCalledWith('anthropic', 'sk-ant-draft'))
     expect(setKey).toHaveBeenCalledWith('openai', 'sk-oai-draft')
+    await waitFor(() => expect(api.llm.models).toHaveBeenCalledTimes(1))
+    expect(api.llm.models).toHaveBeenCalledWith('anthropic')
   })
 
   it('syncs the candidate index to main on load', async () => {

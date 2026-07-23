@@ -5,12 +5,16 @@ import { registerSettingsIpc } from '../settings'
 
 class MemoryJsonStore implements JsonStore {
   readonly values = new Map<string, unknown>()
+  reads = 0
+  replaces = 0
 
   async read(name: string): Promise<unknown | null> {
+    this.reads += 1
     return this.values.get(name) ?? null
   }
 
   async replace(name: string, value: unknown): Promise<void> {
+    this.replaces += 1
     this.values.set(name, structuredClone(value))
   }
 }
@@ -42,10 +46,11 @@ describe('registerSettingsIpc', () => {
   })
 
   it('serializes concurrent named writes into one settings artifact', async () => {
+    const store = new MemoryJsonStore()
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
     registerSettingsIpc(
       { handle: (channel, listener) => void handlers.set(channel, listener) },
-      new SettingsSlots(new MemoryJsonStore()),
+      new SettingsSlots(store),
     )
 
     await Promise.all([
@@ -54,5 +59,20 @@ describe('registerSettingsIpc', () => {
     ])
     await expect(handlers.get('settings:get')?.(null, 'filters')).resolves.toEqual({ text: 'horror' })
     await expect(handlers.get('settings:get')?.(null, 'lens')).resolves.toBe('people')
+    expect(store.replaces).toBe(1)
+  })
+
+  it('coalesces superseded values while preserving every caller promise', async () => {
+    const store = new MemoryJsonStore()
+    const slots = new SettingsSlots(store)
+
+    await Promise.all([
+      slots.set('filters', { text: 'h' }),
+      slots.set('filters', { text: 'ho' }),
+      slots.set('filters', { text: 'horror' }),
+    ])
+
+    await expect(slots.get('filters')).resolves.toEqual({ text: 'horror' })
+    expect(store.replaces).toBe(1)
   })
 })

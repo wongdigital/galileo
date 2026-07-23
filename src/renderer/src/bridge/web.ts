@@ -8,7 +8,12 @@ import {
   type ScheduleEvent,
   type ScheduleSources,
 } from '@shared/schedule'
-import type { JsonStore } from '@shared/storage/jsonStore'
+import {
+  parseJson,
+  stringifyJson,
+  validateJsonArtifactName,
+  type JsonStore,
+} from '@shared/storage/jsonStore'
 import { SettingsSlots, SnapshotSlots, StarSlots } from '@shared/storage/slots'
 
 const DEFAULT_SITE = 'https://comiccon2026.sched.com'
@@ -45,15 +50,15 @@ export class BrowserJsonStore implements JsonStore {
   constructor(private readonly storage: BrowserStorage = availableStorage()) {}
 
   async read(name: string): Promise<unknown | null> {
-    validateArtifactName(name)
+    validateJsonArtifactName(name)
     await (this.writes.get(name) ?? Promise.resolve()).catch(() => {})
-    const target = parse(this.storage.getItem(key(name)))
+    const target = parseJson(this.storage.getItem(key(name)))
     if (target.ok) {
       this.storage.removeItem(tempKey(name))
       return target.value
     }
 
-    const temp = parse(this.storage.getItem(tempKey(name)))
+    const temp = parseJson(this.storage.getItem(tempKey(name)))
     if (!temp.ok) {
       this.storage.removeItem(tempKey(name))
       return null
@@ -64,10 +69,10 @@ export class BrowserJsonStore implements JsonStore {
   }
 
   replace(name: string, value: unknown): Promise<void> {
-    validateArtifactName(name)
+    validateJsonArtifactName(name)
     let bytes: string
     try {
-      bytes = stringify(value)
+      bytes = stringifyJson(value)
     } catch (error) {
       return Promise.reject(error)
     }
@@ -298,33 +303,12 @@ function availableStorage(): BrowserStorage {
   return new MemoryStorage()
 }
 
-function validateArtifactName(name: string): void {
-  if (name.length === 0 || name.includes('/') || name.includes('\\') || name === '.' || name === '..') {
-    throw new Error(`Invalid JSON artifact name: ${name}`)
-  }
-}
-
 function key(name: string): string {
   return `${STORAGE_PREFIX}${name}`
 }
 
 function tempKey(name: string): string {
   return `${key(name)}.tmp`
-}
-
-function stringify(value: unknown): string {
-  const bytes = JSON.stringify(value)
-  if (bytes === undefined) throw new TypeError('JsonStore cannot persist undefined')
-  return bytes
-}
-
-function parse(value: string | null): { ok: true; value: unknown } | { ok: false } {
-  if (value === null) return { ok: false }
-  try {
-    return { ok: true, value: JSON.parse(value) }
-  } catch {
-    return { ok: false }
-  }
 }
 
 function webVersion(): string {
