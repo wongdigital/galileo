@@ -246,6 +246,21 @@ describe('browser schedule fetch', () => {
     await expect(fetchWebScheduleSources('https://example.test', fetchImpl)).rejects.toThrow('/all.ics -> 503')
   })
 
+  it('aborts the sibling request and rethrows the original failure', async () => {
+    const failure = new TypeError('Failed to fetch the calendar')
+    let siblingSignal: AbortSignal | undefined
+    const fetchImpl = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith('/all.ics')) return Promise.reject(failure)
+      siblingSignal = init?.signal ?? undefined
+      return new Promise<Response>((_resolve, reject) => {
+        siblingSignal?.addEventListener('abort', () => reject(siblingSignal?.reason), { once: true })
+      })
+    })
+
+    await expect(fetchWebScheduleSources('https://example.test', fetchImpl)).rejects.toBe(failure)
+    expect(siblingSignal?.aborted).toBe(true)
+  })
+
   it('aborts both endpoint requests when the browser deadline expires', async () => {
     vi.useFakeTimers()
     const signals: AbortSignal[] = []

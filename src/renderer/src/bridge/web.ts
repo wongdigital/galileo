@@ -142,6 +142,9 @@ export async function fetchWebScheduleSources(
   try {
     const [ics, listHtml] = await Promise.all([get('/all.ics'), get('/list/descriptions')])
     return { ics, listHtml }
+  } catch (error) {
+    controller.abort(error)
+    throw error
   } finally {
     clearTimeout(timeout)
     options.signal?.removeEventListener('abort', relayAbort)
