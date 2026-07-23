@@ -64,6 +64,7 @@ const SITE = process.env.SCHED_SITE ?? 'https://comiccon2026.sched.com'
 let store: SnapshotStore
 let stars: StarStore
 let keys: KeyStore
+let canonicalEventCache: readonly ScheduleEvent[] = []
 
 /**
  * The canonical event list, resolved from main's own snapshots.
@@ -75,7 +76,12 @@ let keys: KeyStore
  * back to last-fetched only when no baseline has been promoted yet (first run).
  */
 function canonicalEvents(): readonly ScheduleEvent[] {
-  return (store.readSnapshot('last-known-good') ?? store.readSnapshot('last-fetched'))?.events ?? []
+  return canonicalEventCache
+}
+
+async function reloadCanonicalEvents(): Promise<void> {
+  canonicalEventCache =
+    ((await store.readSnapshot('last-known-good')) ?? (await store.readSnapshot('last-fetched')))?.events ?? []
 }
 
 /**
@@ -89,7 +95,7 @@ async function refreshSchedule(acceptAnyway: boolean): Promise<DatasetProjection
     const { ics, listHtml } = await fetchScheduleSources(SITE)
     const { events, stats } = buildDataset(ics, listHtml, { site: SITE })
     fetched = { events, stats, site: SITE, fetchedAt: new Date().toISOString() }
-    store.writeSnapshot('last-fetched', {
+    await store.writeSnapshot('last-fetched', {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       fetchedAt: fetched.fetchedAt,
       site: SITE,
@@ -104,12 +110,13 @@ async function refreshSchedule(acceptAnyway: boolean): Promise<DatasetProjection
 
   const outcome = resolveRefresh({
     fetched,
-    lastKnownGood: store.readSnapshot('last-known-good'),
-    log: store.readChangeLog(),
+    lastKnownGood: await store.readSnapshot('last-known-good'),
+    log: await store.readChangeLog(),
     acceptAnyway,
   })
-  if (outcome.promote) store.writeSnapshot('last-known-good', outcome.promote)
-  store.writeChangeLog(outcome.log)
+  if (outcome.promote) await store.writeSnapshot('last-known-good', outcome.promote)
+  await store.writeChangeLog(outcome.log)
+  await reloadCanonicalEvents()
   return outcome.projection
 }
 
@@ -129,8 +136,8 @@ function registerIpc(): void {
   // Per-UID dismiss of the unseen-change log. Acks live beside the log so a
   // dismissed badge stays dismissed across restarts.
   ipcMain.handle('changes:acknowledge', async (_e, uids: string[]) => {
-    const log = acknowledgeChanges(store.readChangeLog(), uids)
-    store.writeChangeLog(log)
+    const log = acknowledgeChanges(await store.readChangeLog(), uids)
+    await store.writeChangeLog(log)
     return log.entries
   })
 
@@ -144,7 +151,7 @@ function registerIpc(): void {
   registerLlmIpc(ipcMain, { keyStore: keys, getEvents: canonicalEvents })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Packaged builds carry the mark in icon.icns via electron-builder; in dev
   // the dock would otherwise show stock Electron, so point it at the same
   // asset. Guarded twice: dock is macOS-only, and the build/ tree only
@@ -160,6 +167,7 @@ app.whenReady().then(() => {
   store = new SnapshotStore(app.getPath('userData'))
   stars = new StarStore(app.getPath('userData'))
   keys = new KeyStore(app.getPath('userData'), safeStorage)
+  await reloadCanonicalEvents()
   registerIpc()
   installAppMenu()
   createWindow()

@@ -44,62 +44,62 @@ function snapshot(): Snapshot {
 }
 
 describe('SnapshotStore', () => {
-  it('round-trips both slots independently', () => {
+  it('round-trips both slots independently', async () => {
     const good = snapshot()
     const fetchedLater: Snapshot = { ...snapshot(), fetchedAt: '2026-07-21T12:00:00.000Z' }
-    store.writeSnapshot('last-known-good', good)
-    store.writeSnapshot('last-fetched', fetchedLater)
-    expect(store.readSnapshot('last-known-good')?.fetchedAt).toBe(good.fetchedAt)
-    expect(store.readSnapshot('last-fetched')?.fetchedAt).toBe(fetchedLater.fetchedAt)
+    await store.writeSnapshot('last-known-good', good)
+    await store.writeSnapshot('last-fetched', fetchedLater)
+    expect((await store.readSnapshot('last-known-good'))?.fetchedAt).toBe(good.fetchedAt)
+    expect((await store.readSnapshot('last-fetched'))?.fetchedAt).toBe(fetchedLater.fetchedAt)
   })
 
-  it('returns null for a slot that has never been written', () => {
-    expect(store.readSnapshot('last-known-good')).toBeNull()
+  it('returns null for a slot that has never been written', async () => {
+    expect(await store.readSnapshot('last-known-good')).toBeNull()
   })
 
-  it('discards a snapshot from an older schema version instead of crashing', () => {
+  it('discards a snapshot from an older schema version instead of crashing', async () => {
     writeFileSync(join(base, 'schedule', 'last-known-good.json'), JSON.stringify({ ...snapshot(), schemaVersion: 0 }))
-    expect(store.readSnapshot('last-known-good')).toBeNull()
+    expect(await store.readSnapshot('last-known-good')).toBeNull()
   })
 
-  it('discards a truncated file rather than throwing on parse', () => {
+  it('discards a truncated file rather than throwing on parse', async () => {
     writeFileSync(join(base, 'schedule', 'last-known-good.json'), '{"schemaVersion":1,"eve')
-    expect(store.readSnapshot('last-known-good')).toBeNull()
+    expect(await store.readSnapshot('last-known-good')).toBeNull()
   })
 
-  it('leaves no temp files behind after a write', () => {
-    store.writeSnapshot('last-known-good', snapshot())
+  it('leaves no temp files behind after a write', async () => {
+    await store.writeSnapshot('last-known-good', snapshot())
     expect(readdirSync(join(base, 'schedule')).filter((f) => f.includes('.tmp'))).toEqual([])
   })
 
-  it('keeps the previous snapshot readable when a new write fails', () => {
-    store.writeSnapshot('last-known-good', snapshot())
+  it('keeps the previous snapshot readable when a new write fails', async () => {
+    await store.writeSnapshot('last-known-good', snapshot())
     // A value JSON cannot serialize: the rename must never happen, so the good
     // file on disk has to survive intact.
     const circular: Record<string, unknown> = {}
     circular.self = circular
-    expect(() => store.writeSnapshot('last-known-good', circular as unknown as Snapshot)).toThrow()
-    expect(store.readSnapshot('last-known-good')?.events).toHaveLength(1)
+    await expect(store.writeSnapshot('last-known-good', circular as unknown as Snapshot)).rejects.toThrow()
+    expect((await store.readSnapshot('last-known-good'))?.events).toHaveLength(1)
     expect(readdirSync(join(base, 'schedule')).filter((f) => f.includes('.tmp'))).toEqual([])
   })
 
-  it('round-trips the unseen-change log and starts empty', () => {
-    expect(store.readChangeLog()).toEqual(emptyChangeLog())
+  it('round-trips the unseen-change log and starts empty', async () => {
+    expect(await store.readChangeLog()).toEqual(emptyChangeLog())
     const log = {
       schemaVersion: 1,
       entries: { a: [{ uid: 'a', kind: 'moved-room' as const, from: 'Room 5', to: 'Hall H', detectedAt: 'now' }] },
     }
-    store.writeChangeLog(log)
-    expect(store.readChangeLog()).toEqual(log)
+    await store.writeChangeLog(log)
+    expect(await store.readChangeLog()).toEqual(log)
   })
 
-  it('falls back to an empty log when the persisted one is from another version', () => {
+  it('falls back to an empty log when the persisted one is from another version', async () => {
     writeFileSync(join(base, 'schedule', 'unseen-changes.json'), JSON.stringify({ schemaVersion: 99, entries: { a: [] } }))
-    expect(store.readChangeLog()).toEqual(emptyChangeLog())
+    expect(await store.readChangeLog()).toEqual(emptyChangeLog())
   })
 
-  it('creates its directory on construction so a first write cannot fail', () => {
+  it('creates its directory on construction so a first write cannot fail', async () => {
     const fresh = join(base, 'nested', 'deeper')
-    expect(() => new SnapshotStore(fresh).writeSnapshot('last-fetched', snapshot())).not.toThrow()
+    await expect(new SnapshotStore(fresh).writeSnapshot('last-fetched', snapshot())).resolves.toBeUndefined()
   })
 })

@@ -29,53 +29,64 @@ const star = (uid: string, partial: Partial<StarRecord> = {}): StarRecord => ({
 const file = () => join(base, 'schedule', 'stars.json')
 
 describe('StarStore', () => {
-  it('reads an empty list before anything has been written', () => {
-    expect(store.read()).toEqual([])
+  it('reads an empty list before anything has been written', async () => {
+    expect(await store.read()).toEqual([])
   })
 
-  it('round-trips a starred list across a fresh store — the restart case', () => {
-    store.write([star('a'), star('b')])
-    expect(new StarStore(base).read()).toEqual([star('a'), star('b')])
+  it('round-trips a starred list across a fresh store — the restart case', async () => {
+    await store.write([star('a'), star('b')])
+    expect(await new StarStore(base).read()).toEqual([star('a'), star('b')])
   })
 
-  it('writes the versioned envelope', () => {
-    store.write([star('a')])
+  it('writes the versioned envelope', async () => {
+    await store.write([star('a')])
     expect(JSON.parse(readFileSync(file(), 'utf8'))).toEqual({
       schemaVersion: STARS_SCHEMA_VERSION,
       stars: [star('a')],
     })
   })
 
-  it('leaves no temp files behind', () => {
-    store.write([star('a')])
+  it('keeps the previous primary as a backup generation', async () => {
+    await store.write([star('a')])
+    await store.write([star('a'), star('b')])
+    expect(JSON.parse(readFileSync(join(base, 'schedule', 'stars.backup.json'), 'utf8'))).toEqual({
+      schemaVersion: STARS_SCHEMA_VERSION,
+      stars: [star('a')],
+    })
+    writeFileSync(file(), '{corrupt primary')
+    expect(await store.read()).toEqual([star('a')])
+  })
+
+  it('leaves no temp files behind', async () => {
+    await store.write([star('a')])
     expect(readdirSync(join(base, 'schedule')).filter((n) => n.endsWith('.tmp'))).toEqual([])
   })
 
-  it('reads a corrupt file as no stars rather than crashing the app', () => {
+  it('reads a corrupt file as no stars rather than crashing the app', async () => {
     writeFileSync(file(), '{ truncated mid-writ', 'utf8')
-    expect(store.read()).toEqual([])
+    expect(await store.read()).toEqual([])
   })
 
-  it('reads a bare legacy array, since discarding a starred list over a version bump is the worst possible migration', () => {
+  it('reads a bare legacy array, since discarding a starred list over a version bump is the worst possible migration', async () => {
     writeFileSync(file(), JSON.stringify([star('a')]), 'utf8')
-    expect(store.read()).toEqual([star('a')])
+    expect(await store.read()).toEqual([star('a')])
   })
 
-  it('normalizes what it reads back off disk', () => {
+  it('normalizes what it reads back off disk', async () => {
     writeFileSync(
       file(),
       JSON.stringify({ schemaVersion: 1, stars: [{ uid: 'a' }, { title: 'no uid' }] }),
       'utf8'
     )
-    expect(store.read()).toEqual([{ uid: 'a', title: '', start: null, room: '', starredAt: '' }])
+    expect(await store.read()).toEqual([{ uid: 'a', title: '', start: null, room: '', starredAt: '' }])
   })
 
-  it('echoes back the list it persisted', () => {
-    expect(store.write([star('a')])).toEqual([star('a')])
+  it('echoes back the list it persisted', async () => {
+    expect(await store.write([star('a')])).toEqual([star('a')])
   })
 
-  it('echoes back the previous list when the write fails, so the loss is visible now', () => {
-    store.write([star('a')])
+  it('echoes back the previous list when the write fails, so the loss is visible now', async () => {
+    await store.write([star('a')])
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     // Occupy the store's deterministic temp path with a directory, so the temp
     // write fails on every platform while stars.json stays intact for the
@@ -84,9 +95,10 @@ describe('StarStore', () => {
     // and the Windows CI run caught exactly that.)
     mkdirSync(`${file()}.${process.pid}.tmp`)
 
-    const echoed = store.write([star('a'), star('b')])
+    const echoed = await store.write([star('a'), star('b')])
 
     expect(echoed).toEqual([star('a')])
+    expect(JSON.parse(readFileSync(file(), 'utf8')).stars).toEqual([star('a')])
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
@@ -109,19 +121,19 @@ describe('registerStarIpc', () => {
     expect([...handlers.keys()]).toEqual(['stars:get', 'stars:set'])
   })
 
-  it('persists through set and returns the persisted list', () => {
+  it('persists through set and returns the persisted list', async () => {
     const ipc = harness()
-    expect(ipc.set([star('a')])).toEqual([star('a')])
-    expect(ipc.get()).toEqual([star('a')])
+    expect(await ipc.set([star('a')])).toEqual([star('a')])
+    expect(await ipc.get()).toEqual([star('a')])
   })
 
-  it('normalizes untrusted payloads from the bridge before persisting', () => {
+  it('normalizes untrusted payloads from the bridge before persisting', async () => {
     const ipc = harness()
     // Whatever the renderer sends, it crossed a context bridge; the store is
     // the last place that can refuse to write nonsense to disk.
-    expect(ipc.set([{ uid: 'a', title: 'Kept' }, { title: 'dropped' }, 'garbage'])).toEqual([
+    expect(await ipc.set([{ uid: 'a', title: 'Kept' }, { title: 'dropped' }, 'garbage'])).toEqual([
       { uid: 'a', title: 'Kept', start: null, room: '', starredAt: '' },
     ])
-    expect(ipc.set('not an array at all')).toEqual([])
+    expect(await ipc.set('not an array at all')).toEqual([])
   })
 })
