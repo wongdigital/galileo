@@ -181,10 +181,11 @@ export interface WebBridgeOptions {
   site?: string
   store?: JsonStore
   fetchImpl?: ChatFetch
+  fetchSources?: () => Promise<ScheduleSources>
   transport?: ChatTransport
   keys?: KeyStore
   deliver?: IcsExportDeps['deliver']
-  version?: string
+  version?: string | (() => Promise<string>)
   timeoutMs?: number
 }
 
@@ -205,7 +206,10 @@ export function createWebBridge(options: WebBridgeOptions = {}): PlatformBridge 
 
   return {
     app: {
-      version: async () => options.version ?? webVersion(),
+      version: async () =>
+        typeof options.version === 'function'
+          ? options.version()
+          : (options.version ?? webVersion()),
     },
     schedule: {
       refresh: async (refreshOptions) => {
@@ -213,8 +217,10 @@ export function createWebBridge(options: WebBridgeOptions = {}): PlatformBridge 
           {
             site,
             slots: snapshots,
-            fetchSources: () =>
-              fetchWebScheduleSources(site, streamFetch, { timeoutMs: options.timeoutMs }),
+            fetchSources:
+              options.fetchSources ??
+              (() =>
+                fetchWebScheduleSources(site, streamFetch, { timeoutMs: options.timeoutMs })),
             warn: (error) => console.warn('[schedule] browser refresh failed; using cache:', error),
           },
           refreshOptions,
@@ -259,6 +265,28 @@ let singleton: PlatformBridge | undefined
 export function webBridge(): PlatformBridge {
   singleton ??= createWebBridge()
   return singleton
+}
+
+export interface PlatformSelection {
+  isNativePlatform(): boolean
+  loadNative(): Promise<PlatformBridge>
+  browser(): PlatformBridge
+}
+
+/** Runtime selection stays behind the lazy renderer facade. Electron never
+ * imports this module; browser builds avoid importing native plugins unless
+ * Capacitor reports a native host. */
+export async function selectPlatformBridge(selection: PlatformSelection): Promise<PlatformBridge> {
+  return selection.isNativePlatform() ? selection.loadNative() : selection.browser()
+}
+
+export async function platformBridge(): Promise<PlatformBridge> {
+  const { Capacitor } = await import('@capacitor/core')
+  return selectPlatformBridge({
+    isNativePlatform: () => Capacitor.isNativePlatform(),
+    loadNative: () => import('./capacitor').then(({ capacitorBridge }) => capacitorBridge()),
+    browser: webBridge,
+  })
 }
 
 function availableStorage(): BrowserStorage {

@@ -5,16 +5,16 @@ import type { PlatformBridge } from '@shared/bridge/types'
 import { bridge, setBridgeForTesting } from '../../bridge'
 
 const webModuleLoaded = vi.hoisted(() => vi.fn())
-const webBridgeFactory = vi.hoisted(() => vi.fn())
+const platformBridgeFactory = vi.hoisted(() => vi.fn())
 const subscribe = vi.hoisted(() => vi.fn())
 const unsubscribe = vi.hoisted(() => vi.fn())
 
 vi.mock('../web', () => {
   webModuleLoaded()
-  return { webBridge: webBridgeFactory }
+  return { platformBridge: platformBridgeFactory }
 })
 
-webBridgeFactory.mockReturnValue({
+platformBridgeFactory.mockResolvedValue({
   app: { version: vi.fn(async () => 'web-version') },
   llm: { onChatDelta: subscribe },
 } as unknown as PlatformBridge)
@@ -45,7 +45,7 @@ describe('platform bridge runtime selection', () => {
     expect(subscribe).not.toHaveBeenCalled()
 
     await expect(fallback!.app.version()).resolves.toBe('web-version')
-    expect(webBridgeFactory).toHaveBeenCalledOnce()
+    expect(platformBridgeFactory).toHaveBeenCalledOnce()
 
     const active = fallback!.llm.onChatDelta(vi.fn())
     await vi.waitFor(() => expect(subscribe).toHaveBeenCalledOnce())

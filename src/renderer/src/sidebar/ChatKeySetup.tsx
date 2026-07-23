@@ -199,8 +199,9 @@ export function KeySetup({
       </div>
 
       <p className="text-[10.5px] leading-relaxed text-ink-faint">
-        Keys are stored encrypted on this machine. Event descriptions are sent to your chosen
-        provider when you ask about them.
+        Keys stay in this device&apos;s protected credential store. Pasting from another device
+        can expose a key through Universal Clipboard. Event descriptions are sent to your chosen
+        provider only when you ask about them.
       </p>
     </div>
   )

@@ -1,0 +1,10 @@
+{
+  "appId": "digital.wong.galileo",
+  "appName": "Galileo",
+  "webDir": "dist-web",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": false
+    }
+  }
+}

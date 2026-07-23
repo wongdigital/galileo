@@ -13,6 +13,7 @@ import {
   createBrowserDeliver,
   createWebBridge,
   fetchWebScheduleSources,
+  selectPlatformBridge,
 } from '../web'
 
 vi.mock('@data/enrichment.json', () => ({
@@ -85,6 +86,30 @@ afterEach(() => {
 })
 
 describe('browser bridge composition', () => {
+  it('selects the native bridge only for a native Capacitor runtime', async () => {
+    const browser = { marker: 'browser' } as unknown as PlatformBridge
+    const native = { marker: 'native' } as unknown as PlatformBridge
+    const loadNative = vi.fn(async () => native)
+
+    await expect(
+      selectPlatformBridge({
+        isNativePlatform: () => false,
+        loadNative,
+        browser: () => browser,
+      }),
+    ).resolves.toBe(browser)
+    expect(loadNative).not.toHaveBeenCalled()
+
+    await expect(
+      selectPlatformBridge({
+        isNativePlatform: () => true,
+        loadNative,
+        browser: () => browser,
+      }),
+    ).resolves.toBe(native)
+    expect(loadNative).toHaveBeenCalledOnce()
+  })
+
   it('boots the full renderer from a cached fixture when browser fetch is unavailable', async () => {
     const store = new BrowserJsonStore()
     await new SnapshotSlots(store).writeSnapshot('last-known-good', SNAPSHOT)

@@ -27,6 +27,10 @@ out/
 *.log
 *.tsbuildinfo
 
+# --- Capacitor generated web payload ---
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+
 # --- OS noise ---
 .DS_Store
 docs/inspo/

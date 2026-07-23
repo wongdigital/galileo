@@ -1,49 +1,49 @@
 import type { PlatformBridge } from '@shared/bridge/types'
 
 let testBridge: PlatformBridge | null | undefined
-let webBridgePromise: Promise<PlatformBridge> | undefined
+let platformBridgePromise: Promise<PlatformBridge> | undefined
 
-function loadWebBridge(): Promise<PlatformBridge> {
-  webBridgePromise ??= import('./bridge/web').then(({ webBridge }) => webBridge())
-  return webBridgePromise
+function loadPlatformBridge(): Promise<PlatformBridge> {
+  platformBridgePromise ??= import('./bridge/web').then(({ platformBridge }) => platformBridge())
+  return platformBridgePromise
 }
 
-function withWebBridge<T>(operation: (api: PlatformBridge) => Promise<T>): Promise<T> {
-  return loadWebBridge().then(operation)
+function withPlatformBridge<T>(operation: (api: PlatformBridge) => Promise<T>): Promise<T> {
+  return loadPlatformBridge().then(operation)
 }
 
-/** Synchronous, identity-stable facade whose browser-only implementation is
+/** Synchronous, identity-stable facade whose web/Capacitor implementation is
  * loaded on first use. Electron windows return preload directly, so neither
  * the main renderer nor About eagerly loads provider and storage code. */
 const lazyWebBridge: PlatformBridge = {
   app: {
-    version: () => withWebBridge((api) => api.app.version()),
+    version: () => withPlatformBridge((api) => api.app.version()),
   },
   schedule: {
-    refresh: (options) => withWebBridge((api) => api.schedule.refresh(options)),
+    refresh: (options) => withPlatformBridge((api) => api.schedule.refresh(options)),
   },
   changes: {
-    acknowledge: (uids) => withWebBridge((api) => api.changes.acknowledge(uids)),
+    acknowledge: (uids) => withPlatformBridge((api) => api.changes.acknowledge(uids)),
   },
   stars: {
-    get: () => withWebBridge((api) => api.stars.get()),
-    set: (stars) => withWebBridge((api) => api.stars.set(stars)),
+    get: () => withPlatformBridge((api) => api.stars.get()),
+    set: (stars) => withPlatformBridge((api) => api.stars.set(stars)),
   },
   export: {
-    ics: (payload) => withWebBridge((api) => api.export.ics(payload)),
+    ics: (payload) => withPlatformBridge((api) => api.export.ics(payload)),
   },
   llm: {
-    keyStatus: () => withWebBridge((api) => api.llm.keyStatus()),
-    setKey: (provider, key) => withWebBridge((api) => api.llm.setKey(provider, key)),
-    clearKey: (provider) => withWebBridge((api) => api.llm.clearKey(provider)),
-    models: (provider) => withWebBridge((api) => api.llm.models(provider)),
-    syncDataset: (candidates) => withWebBridge((api) => api.llm.syncDataset(candidates)),
-    chat: (request) => withWebBridge((api) => api.llm.chat(request)),
-    cancelChat: () => withWebBridge((api) => api.llm.cancelChat()),
+    keyStatus: () => withPlatformBridge((api) => api.llm.keyStatus()),
+    setKey: (provider, key) => withPlatformBridge((api) => api.llm.setKey(provider, key)),
+    clearKey: (provider) => withPlatformBridge((api) => api.llm.clearKey(provider)),
+    models: (provider) => withPlatformBridge((api) => api.llm.models(provider)),
+    syncDataset: (candidates) => withPlatformBridge((api) => api.llm.syncDataset(candidates)),
+    chat: (request) => withPlatformBridge((api) => api.llm.chat(request)),
+    cancelChat: () => withPlatformBridge((api) => api.llm.cancelChat()),
     onChatDelta: (callback) => {
       let active = true
       let unsubscribe: (() => void) | undefined
-      void loadWebBridge()
+      void loadPlatformBridge()
         .then((api) => {
           if (!active) return
           const next = api.llm.onChatDelta(callback)
@@ -61,8 +61,8 @@ const lazyWebBridge: PlatformBridge = {
     },
   },
   settings: {
-    get: (name) => withWebBridge((api) => api.settings.get(name)),
-    set: (name, value) => withWebBridge((api) => api.settings.set(name, value)),
+    get: (name) => withPlatformBridge((api) => api.settings.get(name)),
+    set: (name, value) => withPlatformBridge((api) => api.settings.set(name, value)),
   },
 }
 
