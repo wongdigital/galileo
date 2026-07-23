@@ -10,20 +10,21 @@
 
 import { useCallback, useSyncExternalStore } from 'react'
 import { resetPalette } from '@renderer/views/graph/paint'
-import { bridge } from '../bridge'
+import {
+  applyThemeAttribute,
+  loadThemePreference,
+  saveThemePreference,
+  type ThemeId,
+} from './themePreference'
 
-export type ThemeId = 'dark' | 'light'
-
-const SETTING_NAME = 'theme'
-const SETTINGS_READ_TIMEOUT_MS = 400
+export type { ThemeId } from './themePreference'
 
 let current: ThemeId = 'dark'
 const listeners = new Set<() => void>()
 
 function apply(theme: ThemeId): void {
   current = theme
-  if (theme === 'light') document.documentElement.dataset.theme = 'light'
-  else delete document.documentElement.dataset.theme
+  applyThemeAttribute(theme)
   // The graph painter caches resolved token values; the next frame re-reads.
   resetPalette()
   for (const listener of listeners) listener()
@@ -34,22 +35,7 @@ function apply(theme: ThemeId): void {
  * paints in the wrong theme while the durable adapter resolves. */
 export async function initTheme(): Promise<void> {
   apply('dark')
-  const api = bridge()
-  if (!api) return
-  let timeout: number | undefined
-  try {
-    const stored = await Promise.race([
-      api.settings.get(SETTING_NAME),
-      new Promise<undefined>((resolve) => {
-        timeout = window.setTimeout(resolve, SETTINGS_READ_TIMEOUT_MS)
-      }),
-    ])
-    apply(stored === 'light' ? 'light' : 'dark')
-  } catch {
-    // A temporarily unavailable settings store must not block app startup.
-  } finally {
-    if (timeout !== undefined) window.clearTimeout(timeout)
-  }
+  apply(await loadThemePreference())
 }
 
 export function useTheme(): { theme: ThemeId; setTheme: (theme: ThemeId) => void } {
@@ -62,12 +48,9 @@ export function useTheme(): { theme: ThemeId; setTheme: (theme: ThemeId) => void
   )
   const setTheme = useCallback((next: ThemeId) => {
     apply(next)
-    const api = bridge()
-    if (api) {
-      void api.settings.set(SETTING_NAME, next).catch(() => {
-        // Persistence is best-effort; the in-session switch still applies.
-      })
-    }
+    void saveThemePreference(next).catch(() => {
+      // Persistence is best-effort; the in-session switch still applies.
+    })
   }, [])
   return { theme, setTheme }
 }

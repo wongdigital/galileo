@@ -150,19 +150,17 @@ export function SpineProvider({ children }: { children: ReactNode }) {
   // Guards the effect against StrictMode's double-invoke, which would otherwise
   // fire two live fetches at Sched on every mount in development.
   const started = useRef(false)
-  const refreshes = useRef(new Map<string, Promise<void>>())
+  const refreshInFlight = useRef<Promise<void> | null>(null)
 
   const refresh = useCallback((options?: { acceptAnyway?: boolean }): Promise<void> => {
+    if (refreshInFlight.current) return refreshInFlight.current
+
     const api = bridge()
     if (!api) {
       setStatus('ready')
       setRefreshError('No Electron bridge — the app is running outside its shell.')
       return Promise.resolve()
     }
-
-    const key = options?.acceptAnyway ? 'accept-anyway' : 'normal'
-    const existing = refreshes.current.get(key)
-    if (existing) return existing
 
     setStatus('loading')
     let pending!: Promise<void>
@@ -176,11 +174,11 @@ export function SpineProvider({ children }: { children: ReactNode }) {
         // a stale banner over a working list, never a blank app.
         setRefreshError(message(error))
       } finally {
-        if (refreshes.current.get(key) === pending) refreshes.current.delete(key)
-        if (refreshes.current.size === 0) setStatus('ready')
+        if (refreshInFlight.current === pending) refreshInFlight.current = null
+        setStatus('ready')
       }
     })()
-    refreshes.current.set(key, pending)
+    refreshInFlight.current = pending
     return pending
   }, [])
 
