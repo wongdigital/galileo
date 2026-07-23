@@ -82,6 +82,10 @@ Electron API takes it as a structural interface parameter instead—`SafeStorage
 with a plain object and no Electron host. Follow that pattern rather than reaching for a
 module mock of `electron`.
 
+Capacitor adapters follow the same rule: plugin APIs sit behind structural interfaces and
+tests use plain fakes. Do not mock Capacitor modules or let plugin imports leak into shared
+logic.
+
 Canvas views are tested by stubbing the renderer and asserting the contract around it, not
 the pixels—see `docs/solutions/2026-07-19-testing-a-canvas-view-in-jsdom.md`.
 
@@ -138,6 +142,9 @@ Target profile: **Standard (AA)**. Decisions between conformant alternatives are
 
 - Vite is pinned to `^7` and `@vitejs/plugin-react` to `^5`. electron-vite 5 peers Vite ≤7
   while current defaults resolve Vite 8. Don't "helpfully" unpin them.
+- Capacitor config is deliberately `capacitor.config.json`, not TypeScript: Capacitor CLI
+  8.4.2's TypeScript config loader calls an API removed by TypeScript 7. Keep the global
+  CapacitorHttp patch disabled; native requests call its helper explicitly.
 - The app diffs its own snapshots rather than trusting Sched's `NEW`/`UPDATED`/`CANCELLED`
   flags—those are static editorial annotation, not a change feed. Measured: flag counts held
   byte-identical across 31 hours while nine events changed underneath them.

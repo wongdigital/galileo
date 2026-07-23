@@ -39,7 +39,7 @@ The Chat tab is an optional natural-language way to search, filter, and plan—"
 
 ![Galileo's chat concierge answering a request for horror and Star Wars recommendations, with matching sessions listed beside the schedule](docs/images/galileo-chat.png)
 
-Add a key in the Chat tab. Galileo works with Anthropic, OpenAI, or OpenRouter—you only need one. The key is encrypted at rest through the OS keychain (Electron `safeStorage`) and lives only in the main process: it never crosses into the renderer, and it never leaves your machine except in requests to the provider you picked.
+Add a key in the Chat tab. Galileo works with Anthropic, OpenAI, or OpenRouter—you only need one. Desktop keys are encrypted through Electron `safeStorage`; iPad keys use the iOS Keychain; the plain browser development build keeps keys only for the current session. A key is sent only to the provider you picked.
 
 ### Export to your phone
 
@@ -77,6 +77,7 @@ npm install
 node node_modules/electron/install.js   # if Electron's binary postinstall was skipped
 npm run fetch                           # pull today's schedule
 npm run dev                             # launch the app
+npm run dev:web                         # launch the browser renderer
 ```
 
 Vite is pinned to `^7` and `@vitejs/plugin-react` to `^5`: electron-vite 5 peers Vite ≤7, while current defaults resolve Vite 8.
@@ -87,6 +88,8 @@ Vite is pinned to `^7` and `@vitejs/plugin-react` to `^5`: electron-vite 5 peers
 npm run dist     # electron-vite build + electron-builder → dist/Galileo-<version>-arm64.dmg (+ .zip)
 npm run dist:win # electron-vite build + electron-builder → dist/Galileo-<version>-setup.exe (NSIS)
 npm run pack     # unpacked .app in dist/ for a quick local check, no dmg
+npm run ios:sync # build the web renderer and sync the committed Capacitor iOS project
+npm run ios:open # open the iOS project in Xcode
 ```
 
 `npm run dist` produces an Apple Silicon macOS build. Signing and notarization are opt-in: with no Apple credentials in the environment the output is unsigned (ad-hoc), which is fine for local use. For a release, install a "Developer ID Application" cert in the keychain and export `APPLE_API_KEY` (path to an App Store Connect API `.p8`), `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`; the same `npm run dist` then signs and notarizes.
