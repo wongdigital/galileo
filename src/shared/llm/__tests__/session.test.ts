@@ -113,6 +113,41 @@ describe('createChatSession', () => {
     expect(deltas).toContainEqual({ status: "This provider's response won't stream." })
   })
 
+  it('preserves partial buffered output when the retry ends in a provider error', async () => {
+    const streamFetch = vi.fn()
+    const bufferedRequest = vi.fn()
+    const runTurn = vi
+      .fn<NonNullable<ChatSessionDeps['runTurn']>>()
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { kind: 'provider', message: 'Failed to fetch', transport: 'cors' },
+      })
+      .mockImplementationOnce(async ({ onDelta }) => {
+        onDelta?.({ text: 'Buffered partial' })
+        return {
+          ok: false,
+          error: { kind: 'provider', message: 'Provider disconnected' },
+        }
+      })
+    const session = createChatSession(dependencies({
+      runTurn,
+      transport: { streamFetch: streamFetch as typeof fetch, bufferedRequest: bufferedRequest as typeof fetch },
+    }))
+
+    await expect(session.chat(request)).resolves.toEqual({
+      ok: true,
+      turn: {
+        interrupted: true,
+        message: { role: 'assistant', content: 'Buffered partial' },
+        eventUids: [],
+        toolTrace: [],
+      },
+    })
+    expect(runTurn).toHaveBeenCalledTimes(2)
+    expect(runTurn.mock.calls[1]![0].fetchImpl).toBe(bufferedRequest)
+    expect(runTurn.mock.calls[1]![0].generationMode).toBe('buffered')
+  })
+
   it('does not retry an interrupted turn after partial output', async () => {
     const runTurn = vi.fn<NonNullable<ChatSessionDeps['runTurn']>>(async () => ({
       ok: true,
