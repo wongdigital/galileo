@@ -174,6 +174,26 @@ function SelectionReadout() {
   )
 }
 
+function CompactStub() {
+  return (
+    <section
+      aria-labelledby="compact-layout-title"
+      className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center"
+    >
+      <h1
+        id="compact-layout-title"
+        className="font-display text-[15px] font-semibold text-ink-bright"
+      >
+        Compact planning layout
+      </h1>
+      <p className="max-w-sm text-[12px] leading-relaxed text-ink-faint">
+        Phone-sized schedule planning is reserved for a later phase. Widen the window to
+        browse the schedule.
+      </p>
+    </section>
+  )
+}
+
 type SidebarTab = 'filter' | 'chat'
 
 const SIDEBAR_TABS: { id: SidebarTab; label: string }[] = [
@@ -416,9 +436,9 @@ function Shell() {
           Galileo
         </span>
         <div className="flex items-center gap-2">
-          <ExportButton touch={overlay} />
+          {tier !== 'compact' ? <ExportButton touch={overlay} /> : null}
           <ThemeToggle touch={overlay} />
-          <ViewToggle touch={overlay} />
+          {tier !== 'compact' ? <ViewToggle touch={overlay} /> : null}
         </div>
       </header>
 
@@ -439,7 +459,13 @@ function Shell() {
         />
 
         <main inert={sidebarOpen && overlay} className="flex min-w-0 flex-1 flex-col">
-          {view === 'schedule' ? <ScheduleView /> : <GraphView />}
+          {tier === 'compact' ? (
+            <CompactStub />
+          ) : view === 'schedule' ? (
+            <ScheduleView />
+          ) : (
+            <GraphView />
+          )}
         </main>
       </div>
     </div>

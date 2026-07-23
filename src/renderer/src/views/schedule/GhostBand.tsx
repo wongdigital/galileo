@@ -46,7 +46,7 @@ export function GhostBand({ ghosts, onRemove }: GhostBandProps) {
             type="button"
             onClick={() => onRemove(star.uid)}
             title="Remove this star"
-            className="shrink-0 rounded border border-line px-2 py-1 text-[11px] text-ink-faint transition-colors duration-150 hover:border-cancelled/50 hover:text-cancelled"
+            className="touch-hit-24 shrink-0 rounded border border-line px-2 py-1 text-[11px] text-ink-faint transition-colors duration-150 hover:border-cancelled/50 hover:text-cancelled"
           >
             Clear
           </button>

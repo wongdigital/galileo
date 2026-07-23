@@ -129,7 +129,7 @@ export function KeySetup({
             type="button"
             onClick={onRefreshModels}
             title="Refresh the model list from the provider"
-            className="text-ink-faint transition-colors duration-150 hover:text-lumen"
+            className="touch-hit-24 text-ink-faint transition-colors duration-150 hover:text-lumen"
           >
             ↻
           </button>

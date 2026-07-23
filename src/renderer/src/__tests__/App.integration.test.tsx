@@ -582,6 +582,17 @@ describe('responsive shell', () => {
     expect(screen.queryByRole('dialog', { name: 'Planning tools' })).toBeNull()
   })
 
+  it('reserves compact for the phone layout without crowding the titlebar', async () => {
+    installMatchMedia(590)
+    const view = render(<App />)
+
+    expect(view.container.firstElementChild?.getAttribute('data-viewport-tier')).toBe('compact')
+    expect(screen.getByText('Compact planning layout')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Graph' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Star events to export/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Open planning sidebar' })).toBeTruthy()
+  })
+
   it('gives the overlay scrim, Escape, focus trap, inert background, and focus return', async () => {
     installMatchMedia(820)
     await mount()
@@ -655,10 +666,16 @@ describe('responsive shell', () => {
     }) as HTMLInputElement
     fireEvent.change(search, { target: { value: 'Drawing' } })
     fireEvent.click(screen.getByText('Drawing Monsters for a Living'))
+    expect(screen.getByRole('button', { name: 'Close event card' })).toBeTruthy()
+    const scrollViewport = mainPane().querySelector<HTMLElement>('.overflow-y-auto')!
+    scrollViewport.scrollTop = 128
     fireEvent.click(within(planning).getByRole('tab', { name: 'Chat' }))
 
     resizeViewport(820)
     expect(view.container.firstElementChild?.getAttribute('data-viewport-tier')).toBe('medium')
+    expect(screen.getByRole('button', { name: 'Close event card' })).toBeTruthy()
+    expect(mainPane().querySelector<HTMLElement>('.overflow-y-auto')).toBe(scrollViewport)
+    expect(scrollViewport.scrollTop).toBe(128)
     fireEvent.click(screen.getByRole('button', { name: 'Open planning sidebar' }))
 
     const dialog = screen.getByRole('dialog', { name: 'Planning tools' })

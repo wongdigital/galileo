@@ -214,10 +214,27 @@
   }
 }
 
+/* Touch layouts use the AA profile's 44px house floor for primary controls.
+   Keeping this rule at the shell boundary covers existing actions such as
+   chat send/stop, refresh/drift, and view/day controls without changing the
+   pixel-identical wide Electron shell. */
+[data-touch-layout='true'] button:not(.touch-hit-24),
+[data-touch-layout='true'] [role='button']:not(.touch-hit-24) {
+  min-width: 44px;
+  min-height: 44px;
+}
+[data-touch-layout='true'] input,
+[data-touch-layout='true'] select,
+[data-touch-layout='true'] textarea {
+  min-height: 44px;
+}
+
 /* Dense secondary controls keep their compact instrument appearance while
    exposing at least the WCAG 2.5.8 24px pointer target in touch layouts. */
 [data-touch-layout='true'] .touch-hit-24 {
   position: relative;
+  min-width: 24px;
+  min-height: 24px;
 }
 [data-touch-layout='true'] .touch-hit-24::after {
   position: absolute;

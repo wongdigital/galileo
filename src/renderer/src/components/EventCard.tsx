@@ -190,7 +190,7 @@ export function CardShell({ eyebrow, dismissLabel, onDismiss, children }: CardSh
           onClick={onDismiss}
           aria-label={dismissLabel}
           // 24×24 hit area (SC 2.5.8) with the visual glyph staying small.
-          className="-m-2 flex h-6 w-6 items-center justify-center rounded text-ink-faint transition-colors hover:text-ink"
+          className="touch-hit-24 -m-2 flex h-6 w-6 items-center justify-center rounded text-ink-faint transition-colors hover:text-ink"
         >
           <svg viewBox="0 0 12 12" className="h-3 w-3" aria-hidden="true">
             <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -341,7 +341,7 @@ export function EventCard({ uid, onDismiss }: EventCardProps) {
                   type="button"
                   onClick={() => setSelectedUid(sibling.uid)}
                   title={`${sibling.title} — ${sibling.room || 'Room TBA'}`}
-                  className="rounded border border-line px-1.5 py-0.5 font-mono text-[10.5px] text-ink-dim transition-colors hover:border-line-strong hover:text-ink"
+                  className="touch-hit-24 rounded border border-line px-1.5 py-0.5 font-mono text-[10.5px] text-ink-dim transition-colors hover:border-line-strong hover:text-ink"
                 >
                   {whenLabel(sibling.start)}
                 </button>

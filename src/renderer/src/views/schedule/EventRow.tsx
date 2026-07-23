@@ -112,7 +112,7 @@ export function EventRow({ row, selected, onSelect, onToggleStar, onAcknowledge 
             onAcknowledge()
           }}
           title="Dismiss this change flag"
-          className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[10px] text-ink-faint opacity-0 transition-opacity duration-150 hover:border-line-strong hover:text-ink-dim group-hover:opacity-100"
+          className="touch-hit-24 shrink-0 rounded border border-line px-1.5 py-0.5 text-[10px] text-ink-faint opacity-0 transition-opacity duration-150 hover:border-line-strong hover:text-ink-dim group-hover:opacity-100"
         >
           Seen
         </button>

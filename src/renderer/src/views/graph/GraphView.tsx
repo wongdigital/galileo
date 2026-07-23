@@ -622,7 +622,7 @@ export function GraphView() {
                       <button
                         type="button"
                         onClick={() => setLens(entry.lens)}
-                        className="text-lumen underline-offset-2 hover:underline"
+                        className="touch-hit-24 text-lumen underline-offset-2 hover:underline"
                       >
                         {LENS_LABEL(entry.lens)} has {entry.hubs}
                       </button>
