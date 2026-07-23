@@ -7,6 +7,7 @@ class MemoryJsonStore implements JsonStore {
   readonly values = new Map<string, unknown>()
   reads = 0
   replaces = 0
+  failReplace = false
 
   async read(name: string): Promise<unknown | null> {
     this.reads += 1
@@ -15,6 +16,7 @@ class MemoryJsonStore implements JsonStore {
 
   async replace(name: string, value: unknown): Promise<void> {
     this.replaces += 1
+    if (this.failReplace) throw new Error('replace failed')
     this.values.set(name, structuredClone(value))
   }
 }
@@ -74,5 +76,27 @@ describe('registerSettingsIpc', () => {
 
     await expect(slots.get('filters')).resolves.toEqual({ text: 'horror' })
     expect(store.replaces).toBe(1)
+  })
+
+  it('rejects every caller in a failed batch and drains a later write', async () => {
+    const store = new MemoryJsonStore()
+    const slots = new SettingsSlots(store)
+    store.failReplace = true
+
+    const failed = await Promise.allSettled([
+      slots.set('filters', { text: 'h' }),
+      slots.set('filters', { text: 'horror' }),
+      slots.set('lens', 'people'),
+    ])
+
+    expect(failed).toEqual([
+      expect.objectContaining({ status: 'rejected', reason: expect.objectContaining({ message: 'replace failed' }) }),
+      expect.objectContaining({ status: 'rejected', reason: expect.objectContaining({ message: 'replace failed' }) }),
+      expect.objectContaining({ status: 'rejected', reason: expect.objectContaining({ message: 'replace failed' }) }),
+    ])
+    store.failReplace = false
+    await expect(slots.set('filters', { text: 'comics' })).resolves.toBeUndefined()
+    await expect(slots.get('filters')).resolves.toEqual({ text: 'comics' })
+    expect(store.values.get('settings.json')).toEqual({ filters: { text: 'comics' } })
   })
 })

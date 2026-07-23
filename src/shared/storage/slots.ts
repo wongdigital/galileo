@@ -102,14 +102,18 @@ export class SettingsSlots {
       }
     })
 
-    if (!this.draining) {
-      this.draining = Promise.resolve()
-        .then(() => this.drain())
-        .finally(() => {
-          this.draining = null
-        })
-    }
+    this.ensureDrain()
     return operation
+  }
+
+  private ensureDrain(): void {
+    if (this.draining) return
+    this.draining = Promise.resolve()
+      .then(() => this.drain())
+      .finally(() => {
+        this.draining = null
+        if (this.pending.size > 0) this.ensureDrain()
+      })
   }
 
   private async drain(): Promise<void> {
