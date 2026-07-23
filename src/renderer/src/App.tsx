@@ -377,6 +377,8 @@ function Shell() {
   const { view, status } = useSpine()
   const tier = useViewportTier()
   const electron = isElectronShell()
+  const capacitor =
+    !electron && typeof window !== 'undefined' && window.location.protocol === 'capacitor:'
   const overlay = tier !== 'wide'
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const sidebarInvokerRef = useRef<HTMLButtonElement>(null)
@@ -414,7 +416,10 @@ function Shell() {
               aria-label="Open planning sidebar"
               aria-expanded={sidebarOpen}
               onClick={() => setSidebarOpen(true)}
-              className="titlebar-no-drag flex h-11 w-11 items-center justify-center rounded-lg border border-line text-ink-dim hover:border-line-strong hover:text-ink"
+              className={[
+                'titlebar-no-drag flex h-11 w-11 items-center justify-center rounded-lg border border-line text-ink-dim hover:border-line-strong hover:text-ink',
+                capacitor ? 'ml-14' : '',
+              ].join(' ')}
             >
               <span aria-hidden="true">☰</span>
             </button>
