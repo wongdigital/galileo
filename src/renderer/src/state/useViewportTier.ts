@@ -47,8 +47,11 @@ export function viewportTierForWidth(
  * drift across unrelated media queries.
  */
 export function useViewportTier(): ViewportTier {
-  const readWidth = (): number =>
-    typeof window === 'undefined' ? VIEWPORT_TIER_BOUNDARIES.wide : window.innerWidth
+  const readWidth = (): number => {
+    if (typeof window === 'undefined') return VIEWPORT_TIER_BOUNDARIES.wide
+    const visualWidth = window.visualViewport?.width
+    return typeof visualWidth === 'number' && visualWidth > 0 ? visualWidth : window.innerWidth
+  }
   const [tier, setTier] = useState<ViewportTier>(() => viewportTierForWidth(readWidth()))
 
   useEffect(() => {
@@ -57,14 +60,17 @@ export function useViewportTier(): ViewportTier {
       setTier((current) => viewportTierForWidth(readWidth(), current))
     }
 
-    if (typeof window.matchMedia !== 'function') {
-      window.addEventListener('resize', update)
-      return () => window.removeEventListener('resize', update)
-    }
-
-    const queries = WATCH_QUERIES.map((query) => window.matchMedia(query))
+    window.addEventListener('resize', update)
+    const visualViewport = window.visualViewport
+    visualViewport?.addEventListener('resize', update)
+    const queries =
+      typeof window.matchMedia === 'function'
+        ? WATCH_QUERIES.map((query) => window.matchMedia(query))
+        : []
     for (const query of queries) query.addEventListener('change', update)
     return () => {
+      window.removeEventListener('resize', update)
+      visualViewport?.removeEventListener('resize', update)
       for (const query of queries) query.removeEventListener('change', update)
     }
   }, [])

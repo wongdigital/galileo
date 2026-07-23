@@ -45,7 +45,13 @@ function installViewport(initialWidth: number) {
   }
 }
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  Object.defineProperty(window, 'visualViewport', {
+    configurable: true,
+    value: undefined,
+  })
+})
 
 describe('useViewportTier', () => {
   it.each([
@@ -80,6 +86,30 @@ describe('useViewportTier', () => {
     resize(VIEWPORT_TIER_BOUNDARIES.compact - 30)
     expect(result.current).toBe('compact')
     resize(VIEWPORT_TIER_BOUNDARIES.compact + VIEWPORT_TIER_BOUNDARIES.hysteresis)
+    expect(result.current).toBe('medium')
+  })
+
+  it('tracks the visual viewport when iPad windowing leaves innerWidth unchanged', () => {
+    installViewport(1024)
+    const listeners = new Set<EventListener>()
+    const visualViewport = {
+      width: 1024,
+      addEventListener: (_type: string, listener: EventListener) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: EventListener) => listeners.delete(listener),
+    }
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    })
+
+    const { result } = renderHook(() => useViewportTier())
+    expect(result.current).toBe('wide')
+
+    visualViewport.width = 683
+    act(() => {
+      for (const listener of listeners) listener(new Event('resize'))
+    })
+
     expect(result.current).toBe('medium')
   })
 })
