@@ -35,9 +35,6 @@ plan and findings documents retain the history.
 
 ## Rehearsal evidence still to close
 
-- [ ] Record the physical-device spike and release-rehearsal findings under
-  `docs/solutions/`, including passed checks, deferred findings, and tooling
-  limitations.
 - [ ] Record the live OpenAI browser-CORS result if an OpenAI key is available;
   otherwise explicitly mark it unobserved and retain the buffered native HTTP
   fallback.
