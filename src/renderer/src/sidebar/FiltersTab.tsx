@@ -51,7 +51,7 @@ function Chip({
       title={title}
       onClick={onClick}
       className={[
-        'flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-all duration-150',
+        'touch-hit-24 flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-all duration-150',
         state === 'on'
           ? 'border-lumen-dim bg-lumen/10 text-ink-bright shadow-[0_0_12px_-4px_var(--color-lumen)]'
           : state === 'not'
@@ -135,7 +135,7 @@ function DimensionSection({ dimension }: { dimension: FilterDimension }) {
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="rounded-full px-2 py-1 text-[11px] text-ink-faint transition-colors duration-150 hover:text-lumen"
+            className="touch-hit-24 rounded-full px-2 py-1 text-[11px] text-ink-faint transition-colors duration-150 hover:text-lumen"
           >
             {expanded ? 'less' : `+${options.length - VISIBLE_VALUES} more`}
           </button>
@@ -157,7 +157,7 @@ function ActiveChips() {
           type="button"
           onClick={() => setFilter(toggleChip(filter, chip))}
           title="Remove"
-          className="flex items-center gap-1.5 rounded-full border border-lumen-dim bg-lumen/10 px-2.5 py-1 text-[11.5px] text-ink-bright transition-colors duration-150 hover:border-cancelled/60 hover:text-cancelled"
+          className="touch-hit-24 flex items-center gap-1.5 rounded-full border border-lumen-dim bg-lumen/10 px-2.5 py-1 text-[11.5px] text-ink-bright transition-colors duration-150 hover:border-cancelled/60 hover:text-cancelled"
         >
           {chip.negated ? <span className="text-cancelled">not</span> : null}
           <span className="truncate">{valueLabel(chip.dimension, chip.value)}</span>

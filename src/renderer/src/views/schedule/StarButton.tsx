@@ -24,7 +24,7 @@ export function StarButton({ starred, onToggle, label, muted = false }: StarButt
         e.stopPropagation()
         onToggle()
       }}
-      className="group/star -m-1 shrink-0 rounded p-1 transition-transform duration-150 active:scale-90"
+      className="touch-hit-24 group/star -m-1 shrink-0 rounded p-1 transition-transform duration-150 active:scale-90"
     >
       <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden="true">
         <path

@@ -18,6 +18,32 @@ Focus is not force-moved into the card on open, because opening is a side
 effect of browsing (row click, dot click) and yanking focus would break the
 scan-through-rows flow.
 
+## touch-target-floor
+
+**Decision:** primary touch targets are at least 44×44 CSS px (the iOS point
+floor at the app's 1:1 viewport scale). Dense secondary controls—filter chips,
+star buttons, and similarly repeated instrument controls—may remain visually
+compact, but expose at least a 24×24 CSS px hit area through padding or an
+expanded pseudo-element.
+
+The larger floor follows Apple's platform convention for primary actions; the
+dense exception remains conformant with WCAG 2.5.8 (Target Size (Minimum)).
+Expanded hit areas preserve Galileo's information density without making the
+visible control misleadingly large.
+
+## overlay-sidebar
+
+**Decision:** below the wide tier, the planning sidebar is a modal-quality
+overlay. Its native-button invoker and close control are 44×44; opening moves
+focus to the close control; Tab and Shift+Tab stay inside; scrim activation and
+Escape dismiss; the background is inert; and dismissal returns focus to the
+invoker.
+
+The Chat and Filter tabs and both tab panels stay mounted while inactive panels
+are hidden. This preserves local transcript, filter expansion, and form state
+through overlay close/open and tier crossings while exposing the standard
+tablist/tab/tabpanel keyboard contract.
+
 ## chip-tri-state (filter facet chips)
 
 **Decision:** `aria-pressed` on/off with the negated state expressed in the

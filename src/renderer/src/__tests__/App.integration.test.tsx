@@ -138,8 +138,50 @@ function giveTheDomASize(): void {
   }
 }
 
+type ViewportListener = (event: MediaQueryListEvent) => void
+let viewportListeners = new Set<ViewportListener>()
+
+function setViewportWidth(width: number): void {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: width,
+  })
+}
+
+function installMatchMedia(width: number): void {
+  setViewportWidth(width)
+  viewportListeners = new Set()
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string): MediaQueryList => ({
+      media: query,
+      matches: window.innerWidth >= Number(query.match(/\d+/)?.[0] ?? 0),
+      onchange: null,
+      addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+        viewportListeners.add(listener as ViewportListener)
+      },
+      removeEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
+        viewportListeners.delete(listener as ViewportListener)
+      },
+      addListener: (listener: ViewportListener) => viewportListeners.add(listener),
+      removeListener: (listener: ViewportListener) => viewportListeners.delete(listener),
+      dispatchEvent: () => true,
+    }),
+  })
+}
+
+function resizeViewport(width: number): void {
+  setViewportWidth(width)
+  const event = { matches: true, media: '' } as MediaQueryListEvent
+  act(() => {
+    for (const listener of viewportListeners) listener(event)
+  })
+}
+
 beforeEach(() => {
   giveTheDomASize()
+  installMatchMedia(1180)
   persisted = []
   refresh = vi.fn<PlatformBridge['schedule']['refresh']>().mockResolvedValue(projection())
   api = installFakeBridge({
@@ -523,5 +565,114 @@ describe('refresh failure', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Accept new data anyway' }))
     })
     expect(refresh).toHaveBeenLastCalledWith({ acceptAnyway: true })
+  })
+})
+
+describe('responsive shell', () => {
+  it('keeps the desktop shell docked at wide and collapses it at medium', async () => {
+    const view = await mount()
+    expect(view.container.firstElementChild?.getAttribute('data-viewport-tier')).toBe('wide')
+    expect(screen.queryByRole('button', { name: 'Open planning sidebar' })).toBeNull()
+    expect(screen.getByRole('complementary', { name: 'Planning tools' })).toBeTruthy()
+
+    resizeViewport(820)
+
+    expect(view.container.firstElementChild?.getAttribute('data-viewport-tier')).toBe('medium')
+    expect(screen.getByRole('button', { name: 'Open planning sidebar' })).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: 'Planning tools' })).toBeNull()
+  })
+
+  it('gives the overlay scrim, Escape, focus trap, inert background, and focus return', async () => {
+    installMatchMedia(820)
+    await mount()
+    const invoker = screen.getByRole('button', { name: 'Open planning sidebar' })
+    fireEvent.click(invoker)
+
+    const dialog = screen.getByRole('dialog', { name: 'Planning tools' })
+    const close = within(dialog).getByRole('button', { name: 'Close planning sidebar' })
+    expect(document.activeElement).toBe(close)
+    expect(document.querySelector('header')?.hasAttribute('inert')).toBe(true)
+    expect(document.querySelector('main')?.hasAttribute('inert')).toBe(true)
+
+    const focusable = [
+      ...dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ].filter((element) => element.tabIndex >= 0 && !element.closest('[hidden]'))
+    const last = focusable.at(-1)!
+    last.focus()
+    fireEvent.keyDown(dialog, { key: 'Tab' })
+    expect(document.activeElement).toBe(close)
+    close.focus()
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last)
+
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Planning tools' })).toBeNull()
+    expect(document.activeElement).toBe(invoker)
+
+    fireEvent.click(invoker)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss planning sidebar' }))
+    expect(screen.queryByRole('dialog', { name: 'Planning tools' })).toBeNull()
+    expect(document.activeElement).toBe(invoker)
+  })
+
+  it('implements tabs with roving focus while keeping both panels mounted', async () => {
+    installMatchMedia(820)
+    await mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Open planning sidebar' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Planning tools' })
+    expect(within(dialog).getByRole('tablist', { name: 'Planning tools' })).toBeTruthy()
+    const filter = within(dialog).getByRole('tab', { name: /^Filter/ })
+    const chat = within(dialog).getByRole('tab', { name: 'Chat' })
+    const filterPanel = document.getElementById(filter.getAttribute('aria-controls')!)!
+    const chatPanel = document.getElementById(chat.getAttribute('aria-controls')!)!
+
+    expect(filter.getAttribute('aria-selected')).toBe('true')
+    expect(filterPanel.hidden).toBe(false)
+    expect(chatPanel.hidden).toBe(true)
+    expect(chatPanel.isConnected).toBe(true)
+
+    filter.focus()
+    fireEvent.keyDown(filter, { key: 'ArrowLeft' })
+    expect(chat.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(chat)
+    expect(filterPanel.hidden).toBe(true)
+    expect(chatPanel.hidden).toBe(false)
+
+    fireEvent.keyDown(chat, { key: 'Home' })
+    expect(chat.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(chat, { key: 'End' })
+    expect(filter.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('preserves selection, filter input, and sidebar tab across 1180→820', async () => {
+    const view = await mount()
+    const planning = screen.getByRole('complementary', { name: 'Planning tools' })
+    const search = within(planning).getByRole('searchbox', {
+      name: 'Search titles, rooms, descriptions',
+    }) as HTMLInputElement
+    fireEvent.change(search, { target: { value: 'Drawing' } })
+    fireEvent.click(screen.getByText('Drawing Monsters for a Living'))
+    fireEvent.click(within(planning).getByRole('tab', { name: 'Chat' }))
+
+    resizeViewport(820)
+    expect(view.container.firstElementChild?.getAttribute('data-viewport-tier')).toBe('medium')
+    fireEvent.click(screen.getByRole('button', { name: 'Open planning sidebar' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Planning tools' })
+    expect(within(dialog).getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe(
+      'true',
+    )
+    fireEvent.click(within(dialog).getByRole('tab', { name: /^Filter/ }))
+    expect(
+      (
+        within(dialog).getByRole('searchbox', {
+          name: 'Search titles, rooms, descriptions',
+        }) as HTMLInputElement
+      ).value,
+    ).toBe('Drawing')
+    expect(within(dialog).getByText('Drawing Monsters for a Living')).toBeTruthy()
   })
 })
