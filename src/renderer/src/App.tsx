@@ -15,6 +15,7 @@ import { useSlidingIndicator } from './components/useSlidingIndicator'
 import { useTheme } from './state/theme'
 import { ScheduleView } from './views/schedule/ScheduleView'
 import { GraphView } from './views/graph/GraphView'
+import { RelatedPanel } from './views/related/RelatedPanel'
 import { bridge, isElectronShell } from './bridge'
 import { useViewportTier, type ViewportTier } from './state/useViewportTier'
 
@@ -27,23 +28,30 @@ import { useViewportTier, type ViewportTier } from './state/useViewportTier'
  * appear in the other with no wiring between them (R10).
  */
 
-const VIEWS: { id: ViewMode; label: string }[] = [
-  { id: 'graph', label: 'Graph' },
-  { id: 'schedule', label: '5-Day' },
-]
-
-function ViewToggle({ touch = false }: { touch?: boolean }) {
+function ViewToggle({
+  touch = false,
+  graphLabel = 'Graph',
+}: {
+  touch?: boolean
+  graphLabel?: 'Graph' | 'Related'
+}) {
   const { view, setView } = useSpine()
   const { itemRef, box } = useSlidingIndicator(view)
+  const views: { id: ViewMode; label: string }[] = [
+    { id: 'graph', label: graphLabel },
+    { id: 'schedule', label: '5-Day' },
+  ]
   return (
     <div className="titlebar-no-drag relative flex items-center gap-px rounded-lg border border-line bg-ground-850 p-px">
       <SegmentedThumb box={box} />
-      {VIEWS.map((v) => {
+      {views.map((v) => {
         const active = view === v.id
         return (
           <button
             key={v.id}
+            type="button"
             ref={itemRef(v.id)}
+            aria-label={v.label}
             onClick={() => setView(v.id)}
             className={[
               'relative rounded-[7px] px-3.5 py-1.5 text-[13px] font-medium',
@@ -171,26 +179,6 @@ function SelectionReadout() {
         <span>no selection</span>
       )}
     </div>
-  )
-}
-
-function CompactStub() {
-  return (
-    <section
-      aria-labelledby="compact-layout-title"
-      className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center"
-    >
-      <h1
-        id="compact-layout-title"
-        className="font-display text-[15px] font-semibold text-ink-bright"
-      >
-        Compact planning layout
-      </h1>
-      <p className="max-w-sm text-[12px] leading-relaxed text-ink-faint">
-        Phone-sized schedule planning is reserved for a later phase. Widen the window to
-        browse the schedule.
-      </p>
-    </section>
   )
 }
 
@@ -387,10 +375,16 @@ function Shell() {
   const overlay = tier !== 'wide'
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const sidebarInvokerRef = useRef<HTMLButtonElement>(null)
+  const previousTier = useRef(tier)
+  const crossedIntoRelated = previousTier.current === 'wide' && tier !== 'wide'
 
   useEffect(() => {
     if (!overlay) setSidebarOpen(false)
   }, [overlay])
+
+  useEffect(() => {
+    previousTier.current = tier
+  }, [tier])
 
   return (
     <div
@@ -438,7 +432,10 @@ function Shell() {
         <div className="flex items-center gap-2">
           {tier !== 'compact' ? <ExportButton touch={overlay} /> : null}
           <ThemeToggle touch={overlay} />
-          {tier !== 'compact' ? <ViewToggle touch={overlay} /> : null}
+          <ViewToggle
+            touch={overlay}
+            graphLabel={tier === 'wide' ? 'Graph' : 'Related'}
+          />
         </div>
       </header>
 
@@ -463,12 +460,21 @@ function Shell() {
           aria-busy={status === 'loading'}
           className="flex min-w-0 flex-1 flex-col"
         >
-          {tier === 'compact' ? (
-            <CompactStub />
-          ) : view === 'schedule' ? (
+          {view === 'schedule' ? (
             <ScheduleView />
           ) : (
-            <GraphView />
+            <>
+              <div
+                hidden={tier !== 'wide'}
+                data-active={tier === 'wide'}
+                className="min-h-0 flex-1 flex-col data-[active=true]:flex"
+              >
+                <GraphView active={tier === 'wide'} />
+              </div>
+              {tier !== 'wide' ? (
+                <RelatedPanel focusHeading={crossedIntoRelated} />
+              ) : null}
+            </>
           )}
         </main>
       </div>

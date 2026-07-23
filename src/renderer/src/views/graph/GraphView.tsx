@@ -134,7 +134,13 @@ function useSize(): [(element: HTMLDivElement | null) => void, { width: number; 
       return
     }
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
+      if (!entry) return
+      // A gated-but-mounted graph is temporarily display:none. ResizeObserver
+      // reports a zero box for that state; keeping the last usable size keeps
+      // ForceGraph mounted, along with its simulation and camera.
+      if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+        setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
+      }
     })
     observer.observe(element)
     return () => observer.disconnect()
@@ -150,20 +156,47 @@ function entityLabel(entity: GraphEntity): string {
   return entity.lens === 'facets' ? valueLabel('genre', entity.id.replace(/^genre:/, '')) : entity.label
 }
 
-export function GraphView() {
-  const { lens, setLens, selectedUid, setSelectedUid } = useSpine()
+function useFinePointer(): boolean {
+  const query = '(hover: hover) and (pointer: fine)'
+  const [fine, setFine] = useState(() =>
+    typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : false,
+  )
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia(query)
+    const update = (): void => setFine(media.matches)
+    update()
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
+
+  return fine
+}
+
+export function GraphView({ active = true }: { active?: boolean }) {
+  const {
+    lens,
+    setLens,
+    selectedUid,
+    setSelectedUid,
+    focusedEntityId,
+    setFocusedEntityId,
+  } = useSpine()
   // Read so a theme switch re-renders this view and repaints both canvases
   // (see the `paint` dependency note and MiniMap's draw effect).
   const { theme } = useTheme()
   const map = useEntityMap()
+  const finePointer = useFinePointer()
 
   const engine = useRef<ForceGraphMethods<GraphNodeObject, GraphLinkObject> | undefined>(undefined)
   const [canvasRef, size] = useSize()
 
-  /** Graph-local: entities are not spine UIDs, and putting them in the spine
-   *  would grow its contract for one view's transient state. */
-  const [pinnedEntity, setPinnedEntity] = useState<string | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!finePointer) setHovered(null)
+  }, [finePointer])
 
   const cached = useNodeCache(map.nodes, map.links)
   const { nodes, links } = cached
@@ -177,9 +210,14 @@ export function GraphView() {
 
   // A hub that vanished under the new lens cannot keep a card open describing
   // it. Hubs swap wholesale on a lens switch (R3), so this fires routinely.
+  // Wait for the enrichment pass: on a fresh mount the people/IP hubs are
+  // temporarily empty, and clearing then would defeat spine-backed focus
+  // across a 5-Day → graph return.
   useEffect(() => {
-    if (pinnedEntity && !hubsById.has(pinnedEntity)) setPinnedEntity(null)
-  }, [pinnedEntity, hubsById])
+    if (map.indexReady && focusedEntityId && !hubsById.has(focusedEntityId)) {
+      setFocusedEntityId(null)
+    }
+  }, [map.indexReady, focusedEntityId, hubsById, setFocusedEntityId])
 
   // The event-pin analog: a pinned dot pushed out of scope — a filter edit, or
   // unstarring it from its own card under a stars-only filter — cannot keep its
@@ -204,27 +242,27 @@ export function GraphView() {
 
   const pinEntity = useCallback(
     (id: string) => {
-      setPinnedEntity(id)
+      setFocusedEntityId(id)
       // Mutual exclusion: one card at a time.
       setSelectedUid(null)
     },
-    [setSelectedUid],
+    [setFocusedEntityId, setSelectedUid],
   )
 
   const pinEvent = useCallback(
     (uid: string) => {
       setSelectedUid(uid)
-      setPinnedEntity(null)
+      setFocusedEntityId(null)
     },
-    [setSelectedUid],
+    [setFocusedEntityId, setSelectedUid],
   )
 
   const dismiss = useCallback(() => {
-    setPinnedEntity(null)
+    setFocusedEntityId(null)
     setSelectedUid(null)
-  }, [setSelectedUid])
+  }, [setFocusedEntityId, setSelectedUid])
 
-  const pinnedNodeId = pinnedEntity ?? (selectedUid ? eventNodeId(selectedUid) : null)
+  const pinnedNodeId = focusedEntityId ?? (selectedUid ? eventNodeId(selectedUid) : null)
 
   const adjacency = useMemo(() => {
     const out = new Map<string, Set<string>>()
@@ -262,13 +300,13 @@ export function GraphView() {
   }, [focused, adjacency])
 
   const memberUids = useMemo(() => {
-    if (!pinnedEntity) return []
+    if (!focusedEntityId) return []
     const out: string[] = []
     for (const link of map.links) {
-      if (link.target === pinnedEntity) out.push(eventUidOf(link.source))
+      if (link.target === focusedEntityId) out.push(eventUidOf(link.source))
     }
     return out
-  }, [pinnedEntity, map.links])
+  }, [focusedEntityId, map.links])
 
   /**
    * The armed re-fit. `nodesChanged` is true only when the *event* population
@@ -356,6 +394,46 @@ export function GraphView() {
    * all, which is R5 silently not shipping.
    */
   const canvasMounted = size.width > 0 && map.events.length > 0
+  const savedZoom = useRef<number | null>(null)
+  const wasActive = useRef(active)
+
+  useEffect(() => {
+    const view = engine.current
+    if (!view) {
+      wasActive.current = active
+      return
+    }
+
+    if (!active || document.hidden) {
+      const zoom = view.zoom()
+      if (typeof zoom === 'number') savedZoom.current = zoom
+      view.pauseAnimation()
+      wasActive.current = active
+      return
+    }
+
+    view.resumeAnimation()
+    if (!wasActive.current && focusedEntityId) {
+      const node = nodes.find((candidate) => candidate.id === focusedEntityId)
+      if (node?.x !== undefined && node.y !== undefined) {
+        view.centerAt(node.x, node.y, 300)
+        if (savedZoom.current !== null) view.zoom(savedZoom.current, 300)
+      }
+    }
+    wasActive.current = active
+  }, [active, canvasMounted, focusedEntityId, nodes])
+
+  useEffect(() => {
+    const onVisibilityChange = (): void => {
+      const view = engine.current
+      if (!view) return
+      if (document.hidden || !active) view.pauseAnimation()
+      else view.resumeAnimation()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [active])
+
   // Keyed on the *count*, not the array: everything tuned here is a function of
   // how many nodes there are, and the simulation re-initializes the registered
   // forces itself whenever the drawn population changes. Keying on the array
@@ -488,10 +566,16 @@ export function GraphView() {
 
   const onNodeClick = useCallback(
     (node: GraphNodeObject) => {
-      if (node.model.kind === 'entity') pinEntity(node.id)
-      else pinEvent(node.model.uid)
+      if (node.model.kind === 'entity') {
+        if (focusedEntityId === node.id) dismiss()
+        else pinEntity(node.id)
+      } else if (selectedUid === node.model.uid) {
+        dismiss()
+      } else {
+        pinEvent(node.model.uid)
+      }
     },
-    [pinEntity, pinEvent],
+    [dismiss, focusedEntityId, pinEntity, pinEvent, selectedUid],
   )
 
   // The all-fringe state: a drawn scope in which the current lens found no
@@ -525,7 +609,7 @@ export function GraphView() {
     )
   }
 
-  const pinnedHub = pinnedEntity ? hubsById.get(pinnedEntity) : undefined
+  const pinnedHub = focusedEntityId ? hubsById.get(focusedEntityId) : undefined
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -579,7 +663,7 @@ export function GraphView() {
             backgroundColor="rgba(0,0,0,0)"
             d3AlphaMin={ALPHA_MIN}
             d3VelocityDecay={VELOCITY_DECAY}
-            cooldownTime={8000}
+            cooldownTicks={120}
             nodeRelSize={4}
             enableNodeDrag={false}
             nodeLabel={nodeTooltip}
@@ -603,7 +687,7 @@ export function GraphView() {
               linkWidth(lit ? lit.has(idOf(link.source)) && lit.has(idOf(link.target)) : false)
             }
             onRenderFramePost={paintLabels}
-            onNodeHover={(node) => setHovered(node?.id ?? null)}
+            onNodeHover={finePointer ? (node) => setHovered(node?.id ?? null) : undefined}
             onNodeClick={onNodeClick}
             onBackgroundClick={dismiss}
             onEngineStop={handleEngineStop}

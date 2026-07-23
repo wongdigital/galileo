@@ -68,9 +68,12 @@ the current state).
 **Decision:** the force-directed map is a visual alternative, not the sole
 path—every event and entity it draws is reachable through the 5-Day list, the
 filter chips, and the chat, all fully keyboard-operable. Canvas hit-testing is
-mouse-only; the equivalent-task rule (Task Completion as the metric) is
-satisfied by the list route. Hub/dot hover tooltips duplicate onto the pinned
-card, which is real DOM.
+pointer-operable: fine pointers get hover preview and every pointer gets
+tap/click-to-pin. At medium and compact widths, the Graph position becomes a
+Related list whose hubs and events are real keyboard-operable buttons; the
+equivalent-task rule (Task Completion as the metric) remains satisfied by the
+list routes. Hub/dot hover tooltips duplicate onto the pinned card, which is
+real DOM.
 
 ## live-regions
 
@@ -117,3 +120,16 @@ spread so the anchor's content is statically visible (behaviour-identical), and
 the `EventCard` shell's `onClick` carries a scoped disable—it is a propagation
 boundary, not an affordance (no action to key-trigger), and the panel already
 has keyboard parity through Escape-to-close.
+
+## related-list
+
+**Decision:** below the wide viewport tier, the canvas position becomes a
+semantic Related list built from the same entity-map model. Hubs and events are
+native buttons with visible focus, and the panel heading receives programmatic
+focus only when a visible graph is replaced by the list at the width gate.
+
+The canvas remains mounted but hidden and paused so the layout and approximate
+camera survive a return to wide. The list is not described as a graph: the
+view-toggle label and accessible name change from “Graph” to “Related.” At
+every tier, the 5-Day position remains the complete keyboard path to every
+event.

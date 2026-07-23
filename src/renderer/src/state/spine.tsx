@@ -26,12 +26,9 @@ import { bridge } from '../bridge'
  * docs/solutions/2026-07-18-uid-is-the-identity-key.md.
  *
  * U2 established the container and the view toggle; U5 adds the dataset,
- * filters, stars, and refresh; U6 adds the lens.
- *
- * The graph's seed lived here until the entity map replaced the ego view. It is
- * gone rather than deprecated: the map's scope is the filter, and its only local
- * state is a transient pin on an entity, which is not a spine UID and does not
- * belong in a store two views read.
+ * filters, stars, and refresh; U6 adds the lens. U9 adds focused entity
+ * identity because both the canvas and its narrow-width list expression read
+ * it; it remains session state and is never persisted.
  */
 
 export type ViewMode = 'graph' | 'schedule'
@@ -44,6 +41,10 @@ export interface SpineState {
   /** The focused event, by UID. Survives the view toggle — that's the point. */
   selectedUid: string | null
   setSelectedUid: (uid: string | null) => void
+  /** The focused graph hub, by its lens-namespaced entity id. Like event
+   * selection, it survives graph/list and viewport-tier swaps. */
+  focusedEntityId: string | null
+  setFocusedEntityId: (id: string | null) => void
 
   /** Main's read-only projection. Null only before the first load resolves. */
   dataset: DatasetProjection | null
@@ -129,7 +130,20 @@ function restoredFilter(value: unknown): FilterState | null {
 
 export function SpineProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<ViewMode>('schedule')
-  const [selectedUid, setSelectedUid] = useState<string | null>(null)
+  const [selectedUid, setSelectedUidState] = useState<string | null>(null)
+  const [focusedEntityId, setFocusedEntityIdState] = useState<string | null>(null)
+
+  // An event card and an entity card are two expressions of one focus.
+  // Centralizing the exclusion also covers selections made outside the graph,
+  // so no hidden entity focus can win when the user opens Related.
+  const setSelectedUid = useCallback((uid: string | null) => {
+    setSelectedUidState(uid)
+    if (uid !== null) setFocusedEntityIdState(null)
+  }, [])
+  const setFocusedEntityId = useCallback((id: string | null) => {
+    setFocusedEntityIdState(id)
+    if (id !== null) setSelectedUidState(null)
+  }, [])
 
   const [dataset, setDataset] = useState<DatasetProjection | null>(null)
   const [status, setStatus] = useState<LoadStatus>('loading')
@@ -308,6 +322,8 @@ export function SpineProvider({ children }: { children: ReactNode }) {
       setView,
       selectedUid,
       setSelectedUid,
+      focusedEntityId,
+      setFocusedEntityId,
       dataset,
       status,
       refreshError,
@@ -328,6 +344,7 @@ export function SpineProvider({ children }: { children: ReactNode }) {
     [
       view,
       selectedUid,
+      focusedEntityId,
       dataset,
       status,
       refreshError,

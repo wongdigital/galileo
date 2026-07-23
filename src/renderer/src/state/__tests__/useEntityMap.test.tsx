@@ -365,6 +365,13 @@ describe('useEntityMap — identity stability', () => {
     // And again on the way back out, since a hover ends as often as it starts.
     act(() => view.result.current.spine.setSelectedUid(null))
     expect(view.result.current.map.nodes).toBe(nodes)
+
+    act(() => view.result.current.spine.setFocusedEntityId('ip:star-wars'))
+    expect(view.result.current.map.hubs).toBe(hubs)
+    expect(view.result.current.map.events).toBe(events)
+    expect(view.result.current.map.nodes).toBe(nodes)
+    expect(view.result.current.map.links).toBe(links)
+    expect(view.result.current.map.scopeUids).toBe(scopeUids)
   })
 
   /**

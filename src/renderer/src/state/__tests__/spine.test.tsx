@@ -107,6 +107,28 @@ describe('initial load', () => {
   })
 })
 
+describe('cross-surface focus', () => {
+  it('keeps entity focus in session across view swaps and excludes event focus', async () => {
+    await mount()
+
+    act(() => {
+      spine.setFocusedEntityId('genre:horror')
+      spine.setView('schedule')
+      spine.setView('graph')
+    })
+    expect(spine.focusedEntityId).toBe('genre:horror')
+    expect(spine.selectedUid).toBeNull()
+
+    act(() => spine.setSelectedUid('a'))
+    expect(spine.selectedUid).toBe('a')
+    expect(spine.focusedEntityId).toBeNull()
+
+    act(() => spine.setFocusedEntityId('genre:horror'))
+    expect(spine.focusedEntityId).toBe('genre:horror')
+    expect(spine.selectedUid).toBeNull()
+  })
+})
+
 describe('filter persistence', () => {
   const restoredFilter = {
     chips: [{ dimension: 'genre', value: 'Horror' }],

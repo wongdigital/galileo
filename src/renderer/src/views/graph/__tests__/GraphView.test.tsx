@@ -23,13 +23,23 @@ import type { DatasetProjection, ScheduleEvent } from '@shared/schedule'
 import type { StarRecord } from '@shared/stars'
 import { clearFakeBridge, installFakeBridge } from '../../../test/fakeBridge'
 
-const { HASH_OF_EMPTY, engine } = vi.hoisted(() => ({
+const { HASH_OF_EMPTY, engine, forceProps } = vi.hoisted(() => ({
   HASH_OF_EMPTY: 'e3b0c44298fc1c14',
   /** The imperative handle GraphView drives, and a way to fire `onEngineStop`
    *  from a test — the settle never happens without a real simulation. A fit is
    *  a `centerAt` + `zoom` pair; `fits` counts the pairs, `zooms` records every
    *  requested zoom level so the MAX_ZOOM cap is assertable. */
-  engine: { fits: 0, zooms: [] as number[], stop: null as null | (() => void) },
+  engine: {
+    fits: 0,
+    zooms: [] as number[],
+    pauses: 0,
+    resumes: 0,
+    stop: null as null | (() => void),
+  },
+  forceProps: {
+    cooldownTicks: 0,
+    hoverEnabled: false,
+  },
 }))
 
 vi.mock('react-force-graph-2d', async () => {
@@ -40,13 +50,17 @@ vi.mock('react-force-graph-2d', async () => {
         {
           graphData,
           onNodeClick,
+          onNodeHover,
           onBackgroundClick,
           onEngineStop,
+          cooldownTicks,
         }: {
           graphData: { nodes: { id: string }[] }
           onNodeClick?: (node: unknown) => void
+          onNodeHover?: (node: unknown) => void
           onBackgroundClick?: () => void
           onEngineStop?: () => void
+          cooldownTicks?: number
         },
         ref: Ref<unknown>,
       ) => {
@@ -64,8 +78,16 @@ vi.mock('react-force-graph-2d', async () => {
           // Both the getter (`d3Force('charge')?.strength(…)`) and the setter
           // (`d3Force('halo', force)`) shapes, since the view uses each.
           d3Force: () => ({ strength: () => undefined, distance: () => undefined }),
+          pauseAnimation: () => {
+            engine.pauses += 1
+          },
+          resumeAnimation: () => {
+            engine.resumes += 1
+          },
         }))
         engine.stop = onEngineStop ?? null
+        forceProps.cooldownTicks = cooldownTicks ?? 0
+        forceProps.hoverEnabled = typeof onNodeHover === 'function'
         return (
           <div data-testid="force-canvas">
             <button type="button" data-testid="background" onClick={() => onBackgroundClick?.()} />
@@ -167,7 +189,11 @@ const projection = (): DatasetProjection => ({
 beforeEach(() => {
   engine.fits = 0
   engine.zooms = []
+  engine.pauses = 0
+  engine.resumes = 0
   engine.stop = null
+  forceProps.cooldownTicks = 0
+  forceProps.hoverEnabled = false
   installFakeBridge({
     schedule: { refresh: vi.fn(async () => projection()) },
     changes: { acknowledge: vi.fn(async () => ({})) },
@@ -186,8 +212,11 @@ afterEach(() => {
 /** jsdom has no layout engine and no ResizeObserver, so the canvas host measures
  *  0 and the render guard keeps the graph unmounted. */
 function sizeTheDom(): void {
+  resizeCallback = null
   globalThis.ResizeObserver = class {
-    constructor(private readonly cb: ResizeObserverCallback) {}
+    constructor(private readonly cb: ResizeObserverCallback) {
+      resizeCallback = cb
+    }
     observe(target: Element): void {
       this.cb([{ contentRect: { width: 1200, height: 800 } } as ResizeObserverEntry], this)
     }
@@ -195,6 +224,8 @@ function sizeTheDom(): void {
     disconnect(): void {}
   } as unknown as typeof ResizeObserver
 }
+
+let resizeCallback: ResizeObserverCallback | null = null
 
 /** Exposes the spine so a test can set filter/lens/selection the way the rest of
  *  the app would, rather than reaching into the view. */
@@ -204,17 +235,17 @@ function Probe() {
   return null
 }
 
-const mount = () =>
+const mount = (active = true) =>
   render(
     <SpineProvider>
       <Probe />
-      <GraphView />
+      <GraphView active={active} />
     </SpineProvider>,
   )
 
-const mountSized = async () => {
+const mountSized = async (active = true) => {
   sizeTheDom()
-  const view = mount()
+  const view = mount(active)
   await screen.findByTestId('force-canvas')
   return view
 }
@@ -269,6 +300,18 @@ describe('GraphView — pinning (R7, AE3)', () => {
 
     expect(await screen.findByLabelText(EVENT_CARD)).toBeTruthy()
     expect(spine.selectedUid).toBe('p1')
+  })
+
+  it('treats a second touch tap on the pinned node as dismissal', async () => {
+    await mountSized()
+    const node = await screen.findByTestId('node:event:p1')
+
+    fireEvent.click(node)
+    expect(await screen.findByLabelText(EVENT_CARD)).toBeTruthy()
+    fireEvent.click(node)
+
+    await waitFor(() => expect(spine.selectedUid).toBeNull())
+    expect(screen.queryByLabelText(EVENT_CARD)).toBeNull()
   })
 
   it('keeps one card at a time — pinning a hub clears the event selection', async () => {
@@ -454,6 +497,95 @@ describe('GraphView — the navigator', () => {
     // are the contract assertable here.
     act(() => spine.setFilter({ ...spine.filter, text: 'nothing matches this' }))
     await waitFor(() => expect(screen.queryByTestId('minimap')).toBeNull())
+  })
+})
+
+describe('GraphView — gated WebView lifecycle', () => {
+  it('uses bounded cooldown ticks and keeps the same canvas mounted while paused', async () => {
+    const view = await mountSized()
+    const canvas = screen.getByTestId('force-canvas')
+    expect(forceProps.cooldownTicks).toBeGreaterThan(0)
+
+    view.rerender(
+      <SpineProvider>
+        <Probe />
+        <GraphView active={false} />
+      </SpineProvider>,
+    )
+    act(() => {
+      resizeCallback?.(
+        [{ contentRect: { width: 0, height: 0 } } as ResizeObserverEntry],
+        {} as ResizeObserver,
+      )
+    })
+
+    expect(screen.getByTestId('force-canvas')).toBe(canvas)
+    expect(engine.pauses).toBeGreaterThan(0)
+  })
+
+  it('restores the focused hub and prior zoom when the gate reopens', async () => {
+    const view = await mountSized()
+    fireEvent.click(await screen.findByTestId('node:ip:star-wars'))
+    expect(spine.focusedEntityId).toBe('ip:star-wars')
+    const before = engine.fits
+
+    view.rerender(
+      <SpineProvider>
+        <Probe />
+        <GraphView active={false} />
+      </SpineProvider>,
+    )
+    view.rerender(
+      <SpineProvider>
+        <Probe />
+        <GraphView active />
+      </SpineProvider>,
+    )
+
+    expect(spine.focusedEntityId).toBe('ip:star-wars')
+    expect(engine.fits).toBe(before + 1)
+    expect(engine.zooms.at(-1)).toBe(1)
+  })
+
+  it('does not install hover preview for coarse pointers', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ matches: false })),
+    })
+
+    await mountSized()
+    expect(forceProps.hoverEnabled).toBe(false)
+  })
+
+  it('retains hover preview for fine pointers', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    })
+
+    await mountSized()
+    expect(forceProps.hoverEnabled).toBe(true)
+  })
+
+  it('pauses while the document is hidden and resumes when visible', async () => {
+    let hidden = false
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      get: () => hidden,
+    })
+    await mountSized()
+
+    hidden = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    hidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    expect(engine.pauses).toBeGreaterThan(0)
+    expect(engine.resumes).toBeGreaterThan(0)
   })
 })
 

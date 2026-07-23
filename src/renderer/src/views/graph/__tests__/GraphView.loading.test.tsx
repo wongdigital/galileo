@@ -35,6 +35,8 @@ vi.mock('react-force-graph-2d', async () => {
         centerAt: () => {},
         zoom: () => 1,
         d3Force: () => ({ strength: () => undefined, distance: () => undefined }),
+        pauseAnimation: () => undefined,
+        resumeAnimation: () => undefined,
       }))
       return <div data-testid="force-canvas" />
     }),

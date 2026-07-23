@@ -22,6 +22,29 @@ import type { StarRecord } from '@shared/stars'
 import { clearFakeBridge, installFakeBridge, type FakePlatformBridge } from '../test/fakeBridge'
 import type { PlatformBridge } from '@shared/bridge/types'
 
+vi.mock('../views/graph/GraphView', async () => {
+  const { useSpine } = await vi.importActual<typeof import('../state/spine')>('../state/spine')
+  return {
+    GraphView: ({ active = true }: { active?: boolean }) => {
+      const spine = useSpine()
+      return (
+        <section data-testid="graph-probe" data-active={active}>
+          <button
+            type="button"
+            onClick={() => {
+              spine.setLens('facets')
+              spine.setFocusedEntityId('genre:horror')
+            }}
+          >
+            Focus Horror
+          </button>
+          <span>{spine.focusedEntityId ?? 'no focused entity'}</span>
+        </section>
+      )
+    },
+  }
+})
+
 /** The event card loads the enrichment index for its metadata sections; an
  *  empty index keeps the 1.2 MB live file out of the suite. */
 vi.mock('@data/enrichment.json', () => ({
@@ -606,15 +629,51 @@ describe('responsive shell', () => {
     expect(screen.queryByRole('dialog', { name: 'Planning tools' })).toBeNull()
   })
 
-  it('reserves compact for the phone layout without crowding the titlebar', async () => {
+  it('keeps the schedule and related-list positions available at compact', async () => {
     installMatchMedia(590)
     const view = render(<App />)
 
     expect(view.container.firstElementChild?.getAttribute('data-viewport-tier')).toBe('compact')
-    expect(screen.getByText('Compact planning layout')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Graph' })).toBeNull()
+    expect(await screen.findByText('Drawing Monsters for a Living')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Related' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '5-Day' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Star events to export/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Open planning sidebar' })).toBeTruthy()
+  })
+
+  it('keeps graph identity and focused entity through the wide→medium gate', async () => {
+    await mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Graph' }))
+    const graph = screen.getByTestId('graph-probe')
+    fireEvent.click(screen.getByRole('button', { name: 'Focus Horror' }))
+    expect(graph.textContent).toContain('genre:horror')
+
+    // Stay inside the ±40px hysteresis band first: the gate must not churn the
+    // expensive canvas while the viewport oscillates around the boundary.
+    resizeViewport(980)
+    expect(screen.getByTestId('graph-probe')).toBe(graph)
+    expect(graph.getAttribute('data-active')).toBe('true')
+
+    resizeViewport(940)
+
+    expect(screen.getByTestId('graph-probe')).toBe(graph)
+    expect(graph.getAttribute('data-active')).toBe('false')
+    const relatedHeading = await screen.findByRole('heading', { name: 'Related to Horror' })
+    expect(document.activeElement).toBe(relatedHeading)
+    expect(screen.getByRole('button', { name: /Drawing Monsters for a Living/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Related' })).toBeTruthy()
+
+    resizeViewport(1000)
+    expect(screen.getByTestId('graph-probe')).toBe(graph)
+    expect(graph.getAttribute('data-active')).toBe('false')
+    expect(screen.getByRole('button', { name: 'Related' })).toBeTruthy()
+
+    resizeViewport(1060)
+
+    expect(screen.getByTestId('graph-probe')).toBe(graph)
+    expect(graph.getAttribute('data-active')).toBe('true')
+    expect(graph.textContent).toContain('genre:horror')
+    expect(screen.getByRole('button', { name: 'Graph' })).toBeTruthy()
   })
 
   it('gives the overlay scrim, Escape, focus trap, inert background, and focus return', async () => {
