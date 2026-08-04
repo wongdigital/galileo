@@ -2,12 +2,20 @@ name: Release (Windows)
 
 # Builds the Windows x64 NSIS installer and uploads it to a GitHub Release.
 #
-# Trigger: pushing a version tag (e.g. `v0.1.0`) publishes to the DRAFT release
-# named after the package.json version — nothing goes public until you review
-# the draft and click "Publish release" yourself. A manual run from the Actions
-# tab builds and keeps the installer as a run artifact only; it never touches a
-# release, because a dispatch from an arbitrary branch has no tag to signal
-# which version it is meant to be.
+# Trigger: pushing a version tag (e.g. `v0.1.0`) uploads into the DRAFT release
+# for that tag — nothing goes public until you review the draft and click
+# "Publish release" yourself. A manual run from the Actions tab builds and
+# keeps the installer as a run artifact only; it never touches a release,
+# because a dispatch from an arbitrary branch has no tag to signal which
+# version it is meant to be.
+#
+# The workflow creates the draft itself (one per tag, with auto-generated
+# notes to edit before publishing) and attaches assets with `gh release
+# upload --clobber`, which is idempotent on retry. electron-builder runs with
+# `--publish never`: its own GitHub publisher can't look up draft releases by
+# tag, so an upload retry would mint a second draft for the same tag — that
+# happened on v0.1.1. The mac runbook's manual `gh release upload` lands in
+# this same draft.
 #
 # The build is UNSIGNED — there is no Authenticode cert wired up yet, so first
 # run shows a SmartScreen warning. Adding a signing step later is additive and
@@ -23,7 +31,7 @@ on:
       - 'v*'
   workflow_dispatch:
 
-# electron-builder needs write access to create the release with GITHUB_TOKEN.
+# `gh release create/upload` need write access via GITHUB_TOKEN.
 permissions:
   contents: write
 
@@ -64,13 +72,38 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
-      # electron-vite compiles main/preload/renderer into out/; electron-builder
-      # packages it into the NSIS installer. Only tag builds publish (draft
-      # release); dispatch builds stop at the run artifact below.
-      - run: npm run build
-      - run: npx electron-builder --win --publish ${{ github.ref_type == 'tag' && 'always' || 'never' }}
+      # One draft per tag, created before anything uploads. `gh release view`
+      # resolves drafts by tag (the GitHub UI does not), so a re-run of a
+      # failed build reuses the existing draft instead of minting another.
+      # --generate-notes drafts the notes from the commits since the previous
+      # release — a scaffold to rewrite on the release page before publishing.
+      - name: Create draft release
+        if: github.ref_type == 'tag'
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft >/dev/null 2>&1; then
+            echo "Release for $GITHUB_REF_NAME already exists — reusing it."
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --title "${GITHUB_REF_NAME#v}" --generate-notes
+          fi
+
+      # electron-vite compiles main/preload/renderer into out/; electron-builder
+      # packages it into the NSIS installer. Publishing is never delegated to
+      # electron-builder (see header); tag builds attach assets in the next
+      # step, dispatch builds stop at the run artifact below.
+      - run: npm run build
+      - run: npx electron-builder --win --publish never
+
+      - name: Upload installer to the draft release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*-setup.exe dist/*-setup.exe.blockmap dist/latest.yml --clobber
 
       # Also keep the installer on the run page, so it's grabbable even if the
       # release upload is the thing that fails — hence !cancelled(), because the
